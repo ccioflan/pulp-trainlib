@@ -133,7 +133,7 @@ void cast_fp16_tensor_to_fp32 (void * cast_16t32_args)
   int stop = start+blockSize > args.size ? args.size : start+blockSize;
 
   for (int i=start; i<stop; i++) {
-    args.destination[i] = (float) args.source[i];
+    // args.destination[i] = (float) args.source[i];
   }
 }
 
