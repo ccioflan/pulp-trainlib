@@ -67,6 +67,21 @@ fi
 cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/DSCNN/ # TODO: parametrize
 python utils/GM.py
 
-# make clean get_golden all run
+make clean get_golden all run
 
 make clean all run platform=$PLATFORM CORE=8 # sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
+
+
+# Layer 0 output:
+# 0.000013 
+# 0.000063 
+# 0.000065 
+# -0.000021 
+# -0.000044 
+# -0.000099 
+# 0.000155 
+# 0.000023 
+# 0.000002 
+# 0.000022 
+# -0.000037 
+# 0.000002 
