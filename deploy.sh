@@ -29,6 +29,10 @@ if [ "$1" == "-h" ] ; then
     exit 0
 fi
 
+export SDK=$1
+export MEMORY=$2
+export PLATFORM=$3
+export MFCC=$4
 
 # export PATH=/usr/pack/gcc-4.9.1-af/x86_64-rhe6-linux/bin:$PATH
 # export LD_LIBRARY_PATH=/usr/pack/gcc-4.9.1-af/x86_64-rhe6-linux/lib64/:$LD_LIBRARY_PATH
@@ -61,7 +65,8 @@ else
 fi
 
 cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/DSCNN/ # TODO: parametrize
+python utils/GM.py
 
 # make clean get_golden all run
 
-make clean all run # sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
+make clean all run platform=$PLATFORM CORE=8 # sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
