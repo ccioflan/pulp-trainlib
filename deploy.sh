@@ -69,4 +69,6 @@ python TrainLib_Deployer.py
 
 cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/DSCNN/ # TODO: parametrize
 
-make clean all run sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
+# make clean get_golden all run
+
+make clean all run # sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
