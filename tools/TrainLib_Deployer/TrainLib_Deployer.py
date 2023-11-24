@@ -39,7 +39,7 @@ import utils.DNN_Composer   as composer
 # ---------------------
 
 # GENERAL PROPERTIES
-project_name    = 'DSCNN'
+project_name    = 'DSCNNL'
 project_path    = '/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/'
 proj_folder     = project_path + project_name + '/'
 
@@ -82,7 +82,7 @@ loss_fn         = "MSELoss"            # Name of PyTorch's loss function
 # ------- DS-CNN NETWORK GRAPH --------
 layer_list = ['linear']
 # Layer properties
-in_ch_list = [64]
+in_ch_list = [276]
 out_ch_list = [12]
 hk_list = [1]
 wk_list = [1]
