@@ -261,7 +261,7 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
     f.write('NUM_MATMULS?=24		# Available standard matmuls in the library' + '\n')
     f.write('TRAIN_LIB=./lib\n')
     f.write('TRAIN_LIB_SRCS=$(TRAIN_LIB)/sources\n')
-    f.write('APP_SRCS = main.c net.c\n\n')
+    f.write('APP_SRCS = main.c net.c # iodata.c \n\n') # TODO: Fix multiple definition of value-defined arrays
 
     f.write('APP_CFLAGS += -I. -I$(TRAIN_LIB)/include\n')
     f.write('APP_CFLAGS += -O3 -g3\n')
@@ -373,7 +373,12 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n")
 
     # Write sizes to the header files 
-    f.write("f = open('init-defines.h', 'w')\n")
+    f.write("f = open('initdefines.h', 'w')\n")
+
+    # Include guard
+    f.write("f.write('#ifndef INITDEFINES_H"+"\\n')\n")
+    f.write("f.write('#define INITDEFINES_H"+"\\n')\n")
+
     for layer in range(len(layers_l)):
         f.write("f.write('// Layer"+str(layer)+"\\n')\n")
         f.write("f.write('#define Tin_C_l"+str(layer)+" '+str(l"+str(layer)+"_in_ch)+'\\n')\n")
@@ -399,11 +404,16 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n")
 
     # Write hyperparameters to header
-    f.write("f = open('init-defines.h', 'a')\n")
+    f.write("f = open('initdefines.h', 'a')\n")
     f.write("f.write('\\n// HYPERPARAMETERS\\n')\n")
     f.write("f.write('#define LEARNING_RATE '+str(learning_rate)+'\\n')\n")
     f.write("f.write('#define EPOCHS '+str(epochs)+'\\n')\n")
     f.write("f.write('#define BATCH_SIZE '+str(batch_size)+'\\n')\n")
+
+    # Include guard
+    f.write("f.write('#endif /* INITDEFINES_H */"+"\\n')\n")
+
+
     f.write("f.close()\n\n")
 
     # Create input data and label
@@ -555,15 +565,20 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("label = torch.ones_like(output_test)\n")
 
     # Write init weights to header file
-    f.write("f = open('io_data.h', 'w')\n")
+    f.write("f = open('iodata.h', 'w')\n")
+
+    # Include guard
+    f.write("f.write('#ifndef IODATA_H"+"\\n')\n")
+    f.write("f.write('#define IODATA_H"+"\\n')\n")
+
     f.write("f.write('// Init weights\\n')\n")
     for layer in range(len(layers_l)):
         if (layers_l[layer] != 'ReLU' and layers_l[layer] != 'MaxPool' and layers_l[layer] != 'AvgPool'):
             f.write("f.write('#define WGT_SIZE_L"+str(layer)+" '+str(l"+str(layer)+"_in_ch*l"+str(layer)+"_out_ch*l"+str(layer)+"_hk*l"+str(layer)+"_wk)+'\\n')\n")
             if data_type_l[layer] == 'FP32':
-                f.write("f.write('PI_L2 float init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
+                f.write("f.write('PI_L2 float init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"];\\n')\n")
             elif data_type_l[layer] == 'FP16':
-                f.write("f.write('PI_L2 fp16 init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
+                f.write("f.write('PI_L2 fp16 init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"];\\n')\n")
             else:
                 print("[deployment_utils.GenerateGM] Error in data type definition! (weight init)")
                 exit()
@@ -575,6 +590,22 @@ def GenerateGM(proj_folder_path, project_name,
                 f.write("f.write('PI_L2 fp16 init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"];\\n')\n")
             else:
                 print("[deployment_utils.GenerateGM] Error in data type definition! (weight init - empty ones)")
+                exit()
+    f.write("f.close()\n\n")
+
+    # Write init weights to header file
+    f.write("f = open('iodata.c', 'w')\n")
+
+    f.write("f.write('#include \"iodata.h\"\\n')\n")
+    f.write("f.write('// Init weights\\n')\n")
+    for layer in range(len(layers_l)):
+        if (layers_l[layer] != 'ReLU' and layers_l[layer] != 'MaxPool' and layers_l[layer] != 'AvgPool'):
+            if data_type_l[layer] == 'FP32':
+                f.write("f.write('init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
+            elif data_type_l[layer] == 'FP16':
+                f.write("f.write('init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
+            else:
+                print("[deployment_utils.GenerateGM] Error in data type definition! (weight init)")
                 exit()
     f.write("f.close()\n\n")
 
@@ -601,28 +632,54 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("out = net(inp)\n")
     f.write("\n")
 
+
+    # TODO: Move into hexfile
     # Dump input and output of the network to the header file for the MCU
-    f.write("f = open('io_data.h', 'a')\n")
+    f.write("f = open('iodata.h', 'a')\n")
     f.write("f.write('// Input and Output data\\n')\n")
     f.write("f.write('#define IN_SIZE "+str(in_ch_l[0]*win_l[0]*hin_l[0])+"\\n')\n")
     # Fake input data definition
     if data_type_l[0] == 'FP32':
-        f.write("f.write('PI_L1 float INPUT[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
+        f.write("f.write('PI_L1 float IN_DATA[IN_SIZE];\\n')\n")
     elif data_type_l[0] == 'FP16':
-        f.write("f.write('PI_L1 fp16 INPUT[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
+        f.write("f.write('PI_L1 fp16 IN_DATA[IN_SIZE];\\n')\n")
     else:
         print("[deployment_utils.GenerateGM] Invalid input data size!")
     f.write("out_size = (int(math.floor(l"+str(last_layer)+"_hin-l"+str(last_layer)+"_hk+2*l"+str(last_layer)+"_hpad+l"+str(last_layer)+"_hstr)/l"+str(last_layer)+"_hstr)) * (int(math.floor(l"+str(last_layer)+"_win-l"+str(last_layer)+"_wk+2*l"+str(last_layer)+"_wpad+l"+str(last_layer)+"_wstr)/l"+str(last_layer)+"_wstr)) * l"+str(last_layer)+"_out_ch\n") 
     f.write("f.write('#define OUT_SIZE '+str(out_size)+'\\n')\n")
     # Fake output data and label definition
     if data_type_l[-1] == 'FP32':
-        f.write("f.write('PI_L2 float REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
-        f.write("f.write('PI_L1 float LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")
+        f.write("f.write('PI_L2 float REFERENCE_OUTPUT[OUT_SIZE];\\n')\n")
+        f.write("f.write('PI_L1 float LABEL[OUT_SIZE];\\n')\n")
     elif data_type_l[-1] == 'FP16':
-        f.write("f.write('PI_L2 fp16 REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
-        f.write("f.write('PI_L1 fp16 LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")    
+        f.write("f.write('PI_L2 fp16 REFERENCE_OUTPUT[OUT_SIZE];\\n')\n")
+        f.write("f.write('PI_L1 fp16 LABEL[OUT_SIZE];\\n')\n")    
     else:
         print("[deployment_utils.GenerateGM] Invalid output data size!")
+
+    # Include guard
+    f.write("f.write('#endif /* IODATA_H */"+"\\n')\n")
+
+    f.write("f.close()\n")
+
+    f.write("f = open('iodata.c', 'a')\n")
+
+    if data_type_l[0] == 'FP32':
+        f.write("f.write('IN_DATA[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
+    elif data_type_l[0] == 'FP16':
+        f.write("f.write('IN_DATA[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
+    else:
+        print("[deployment_utils.GenerateGM] Invalid input data size!")
+    # Fake output data and label definition
+    if data_type_l[-1] == 'FP32':
+        f.write("f.write('REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
+        f.write("f.write('LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")
+    elif data_type_l[-1] == 'FP16':
+        f.write("f.write('REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
+        f.write("f.write('LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")    
+    else:
+        print("[deployment_utils.GenerateGM] Invalid output data size!")
+
     f.write("f.close()\n")
 
     f.close()
@@ -673,8 +730,8 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("#include \"pulp_train.h\"\n")
     f.write("#include \"net.h\"\n")
     f.write("#include \"stats.h\"\n\n")
-    f.write("#include \"init-defines.h\"\n")
-    f.write("#include \"io_data.h\"\n")
+    f.write("#include \"initdefines.h\"\n")
+    f.write("#include \"iodata.h\"\n")
 
 
 
@@ -1007,7 +1064,7 @@ def GenerateNet(proj_folder_path, project_name,
     for layer in range(len(layers_l)):
         if layer == 0:
             f.write("  // Layer "+str(layer)+"\n")
-            f.write("  for(int i=0; i<Tin_C_l0*Tin_H_l0*Tin_W_l0; i++)\t\t\tl0_in[i] = INPUT[i];\n")
+            f.write("  for(int i=0; i<Tin_C_l0*Tin_H_l0*Tin_W_l0; i++)\t\t\tl0_in[i] = IN_DATA[i];\n")
             f.write("  for(int i=0; i<Tin_C_l0*Tout_C_l0*Tker_H_l0*Tker_W_l0; i++)\t\tl0_ker[i] = init_WGT_l0[i];\n")
         elif layer > 0 and layer < len(layers_l)-1:
             f.write("  // Layer "+str(layer)+"\n")
