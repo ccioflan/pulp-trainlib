@@ -64,7 +64,7 @@ else
   source /usr/scratch/wetterhorn/cioflanc/tools/gap_sdk_mar23/gap_sdk/sourceme.sh # newest
 fi
 
-cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/DSCNN/ # TODO: parametrize
+cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/DSCNN/ # TODO: parametrize
 python utils/GM.py
 
 make clean get_golden all run

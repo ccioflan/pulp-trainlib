@@ -40,7 +40,7 @@ import utils.DNN_Composer   as composer
 
 # GENERAL PROPERTIES
 project_name    = 'DSCNNL'
-project_path    = '/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser_audiov2/tiny_denoiser/trainlib_example_dscnn/'
+project_path    = '/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/'
 proj_folder     = project_path + project_name + '/'
 
 # TRAINING PROPERTIES
