@@ -86,7 +86,7 @@ else
 
 fi
 
-cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/DSCNNS/ # TODO: parametrize
+cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/network_name/ # TODO: parametrize
 python utils/GM.py
 
 make clean get_golden all run platform=$PLATFORM
