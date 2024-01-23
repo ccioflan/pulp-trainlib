@@ -33,14 +33,24 @@ Available DNN layer names:
 
 import utils.DNN_Reader     as reader
 import utils.DNN_Composer   as composer
+import argparse
 
 # ---------------------
 # --- USER SETTINGS ---
 # ---------------------
 
+
+parser = argparse.ArgumentParser(
+                    prog='Deployer',
+                    description='Generating C code for on-device training')
+
+parser.add_argument('--project_name', type=str, default="DSCNN")
+parser.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/")
+args = parser.parse_args()
+
 # GENERAL PROPERTIES
-project_name    = 'DSCNNL'
-project_path    = '/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/'
+project_name    = args.project_name
+project_path    = args.project_path
 proj_folder     = project_path + project_name + '/'
 
 # TRAINING PROPERTIES
