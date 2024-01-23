@@ -55,6 +55,10 @@ then
   if [[ $PLATFORM == "gvsoc" ]]
   then
     source /usr/scratch/wetterhorn/cioflanc/tools/pulp-sdk/configs/pulp-open.sh # PULP-SDK
+    # Error
+    # Launching training procedure...
+    # 9560452886: 636551: [/sys/board/chip/cluster/pe0/warning                 ] Invalid access (pc: 0x1c00b012, offset: 0x57575757, size: 0x1, is_write: 0)
+
   elif [[ $PLATFORM == "fpga" ]]
   then
     source /usr/scratch/wetterhorn/cioflanc/tools/pulp_sdk_fpga/pulp-sdk/configs/pulp-open.sh
@@ -90,17 +94,3 @@ make clean get_golden all run platform=$PLATFORM
 
 make clean all run platform=$PLATFORM CORE=8 # sample=$AUDIO_SAMPLE sdk=$SDK memory=$MEMORY platform=$PLATFORM mfcc=$MFCC CORE=8
 
-
-# Layer 0 output:
-# 0.000013 
-# 0.000063 
-# 0.000065 
-# -0.000021 
-# -0.000044 
-# -0.000099 
-# 0.000155 
-# 0.000023 
-# 0.000002 
-# 0.000022 
-# -0.000037 
-# 0.000002 
