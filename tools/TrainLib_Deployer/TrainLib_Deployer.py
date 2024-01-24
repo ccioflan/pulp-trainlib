@@ -33,7 +33,10 @@ Available DNN layer names:
 
 import utils.DNN_Reader     as reader
 import utils.DNN_Composer   as composer
+
 import argparse
+import onnx
+from onnx import shape_inference
 
 # ---------------------
 # --- USER SETTINGS ---
@@ -44,7 +47,8 @@ parser = argparse.ArgumentParser(
                     prog='Deployer',
                     description='Generating C code for on-device training')
 
-parser.add_argument('--project_name', type=str, default="DSCNN")
+parser.add_argument('--model_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/kws-on-pulp/application_dscnnl_gap8/model.onnx")
+parser.add_argument('--project_name', type=str, default="examplenet")
 parser.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/")
 args = parser.parse_args()
 
@@ -128,7 +132,7 @@ L1_SIZE_BYTES   = 120*(2**10)
 
 # OTHER PROPERTIES
 # Select if to read the network from an external source
-READ_MODEL_ARCH = False                # NOT IMPLEMENTED!!
+READ_MODEL_ARCH = True                # NOT IMPLEMENTED!!
 
 # ---------------------------
 # --- END OF USER SETTING ---
@@ -141,7 +145,77 @@ BACKEND
 
 # Call the DNN Reader and then the DNN Composer 
 if READ_MODEL_ARCH :
-    pass
+
+    supported_layers = [ 'Conv', 'Gemm'] # construct the network as a combination of these layers
+
+    onnx_model = onnx.load(args.model_path)
+    onnx.checker.check_model(onnx_model)
+    onnx_graph = onnx_model.graph
+    m_onnx_graph = shape_inference.infer_shapes(onnx_model)
+    # print (m_onnx_graph)
+    # print (m_onnx_graph.graph.node[0])
+    # print (m_onnx_graph.graph.node[1].attribute)
+    
+    for onnx_node in m_onnx_graph.graph.node:
+        # print (onnx_node.attribute)
+        if (onnx_node.op_type == 'Conv'):
+            print (onnx_node.attribute)
+        # print (onnx_node)
+
+    # for attribute in node_iterating.attribute:
+    #         if attribute.name not in ['kernel_shape', 'dilations', 'group', 'strides', 'pads'] or self.name == "Pad":
+    #             if bool(attribute.i):
+    #                 self.__dict__[attribute.name] = int(attribute.i)
+    #             elif bool(attribute.f):
+    #                 self.__dict__[attribute.name] = int(attribute.f)
+    #             elif bool(attribute.ints):
+    #                 self.__dict__[attribute.name] = list(attribute.ints)
+    #             elif attribute.i == 0:
+    #                 self.__dict__[attribute.name] = 0
+    #             else:
+    #                 sys.exit("DORY FRONTEND error. DORY does not find any values for the attribute {}".format(attribute.name))
+    # graph inputs
+    # for input_name in onnx_graph.input:
+    #     print(input_name)
+    # # graph parameters
+    # for init in onnx_graph.initializer:
+    #     print(init.name)
+    #     print(len(init))
+    # # graph outputs
+    # for output_name in onnx_graph.output:
+    #     print(output_name)
+    # # iterate over nodes
+    # for node in onnx_graph.node:
+    #     # node inputs
+    #     for idx, node_input_name in enumerate(node.input):
+    #         print(idx, node_input_name)
+    #     # node outputs
+    #     for idx, node_output_name in enumerate(node.output):
+    #         print(idx, node_output_name)
+
+    print ("-------")
+    print (len(onnx_graph.initializer[0].raw_data))
+
+
+
+
+
+
+    # for node_iterating in (self.graph.graph.node):
+    #         ### check if the node is supported
+    #         assert (node_iterating.op_type in self.layers_accepted), f"{node_iterating.op_type} not supported by DORY"
+    #         ### Neglecting some nodes since they are not translated to any operation on any backend
+    #         if node_iterating.op_type in self.layers_neglected:
+    #             for node in self.DORY_Graph[::-1]:
+    #                 if int(node_iterating.output[0]) > int(node.get_parameter('output_index')) and node.get_parameter("name") != "Constant":
+    #                     node.add_existing_parameter('output_index', node_iterating.output[0]) 
+    #                     break
+    #         # Adding a new layer
+    #         elif node_iterating.op_type in self.layers_accepted:
+    #             new_node = self.create_node(node_iterating, self.graph)
+    #             self.DORY_Graph.append(new_node)
+    #         else:
+    #             sys.exit("DORY Frontend. Node not parsed.")
 
 
 else:
