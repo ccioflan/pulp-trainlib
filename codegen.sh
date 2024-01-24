@@ -5,7 +5,7 @@ export PROJECTNAME=$2
 
 
 
-# rm -rf $PROJECTPATH/$PROJECTNAME # TODO: parametrize
+rm -rf $PROJECTPATH/$PROJECTNAME # TODO: parametrize
 mkdir $PROJECTPATH
 cd tools/TrainLib_Deployer
 python TrainLib_Deployer.py --project_path $PROJECTPATH --project_name $PROJECTNAME 
