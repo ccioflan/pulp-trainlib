@@ -194,7 +194,7 @@ if READ_MODEL_ARCH :
     graph_offset = int(m_onnx_graph.graph.value_info[0].name)
     graph_len = len(m_onnx_graph.graph.value_info)
 
-    # print (m_onnx_graph)
+    print (onnx_graph.initializer[3])
     # print (graph_offset)
     # print (graph_len)
 
@@ -230,6 +230,16 @@ if READ_MODEL_ARCH :
             # TODO: Read from file
             # Note that this also determines the read position for in_ch_list and out_ch_list
             data_layout_list.append('CHW')
+
+            for init in onnx_graph.initializer:
+                if init.name == onnx_node.input[1]:
+                    # print(init.raw_data)
+                    # TODO: Save data in data_type_list format
+                if init.name == onnx_node.input[2]:
+                    # print(init.raw_data)
+                    # TODO: Save data in data_type_list format
+            
+
             
     # for attribute in node_iterating.attribute:
     #         if attribute.name not in ['kernel_shape', 'dilations', 'group', 'strides', 'pads'] or self.name == "Pad":
