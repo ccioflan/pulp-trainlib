@@ -36,7 +36,7 @@ import utils.DNN_Composer   as composer
 
 import argparse
 import onnx
-from onnx import shape_inference
+from onnx import shape_inference, numpy_helper
 
 # ---------------------
 # --- USER SETTINGS ---
@@ -232,15 +232,12 @@ if READ_MODEL_ARCH :
             data_layout_list.append('CHW')
 
             for init in onnx_graph.initializer:
-                if init.name == onnx_node.input[1]:
-                    # print(init.raw_data)
-                    # TODO: Save data in data_type_list format
-                if init.name == onnx_node.input[2]:
-                    # print(init.raw_data)
-                    # TODO: Save data in data_type_list format
+                if init.name == onnx_node.input[1]: # bias
+                    print (numpy_helper.to_array(init))
+                if init.name == onnx_node.input[2]: # weights
+                    print (numpy_helper.to_array(init))
             
 
-            
     # for attribute in node_iterating.attribute:
     #         if attribute.name not in ['kernel_shape', 'dilations', 'group', 'strides', 'pads'] or self.name == "Pad":
     #             if bool(attribute.i):
@@ -251,46 +248,7 @@ if READ_MODEL_ARCH :
     #                 self.__dict__[attribute.name] = list(attribute.ints)
     #             elif attribute.i == 0:
     #                 self.__dict__[attribute.name] = 0
-    #             else:
-    #                 sys.exit("DORY FRONTEND error. DORY does not find any values for the attribute {}".format(attribute.name))
-    # graph inputs
-    # for input_name in onnx_graph.input:
-    #     print(input_name)
-    # # graph parameters
-    # for init in onnx_graph.initializer:
-    #     print(init.name)
-    #     print(len(init))
-    # # graph outputs
-    # for output_name in onnx_graph.output:
-    #     print(output_name)
-    # # iterate over nodes
-    # for node in onnx_graph.node:
-    #     # node inputs
-    #     for idx, node_input_name in enumerate(node.input):
-    #         print(idx, node_input_name)
-    #     # node outputs
-    #     for idx, node_output_name in enumerate(node.output):
-    #         print(idx, node_output_name)
-
-    # print ("-------")
-    # print (len(onnx_graph.initializer[0].raw_data))
-
-
-    # for node_iterating in (self.graph.graph.node):
-    #         ### check if the node is supported
-    #         assert (node_iterating.op_type in self.layers_accepted), f"{node_iterating.op_type} not supported by DORY"
-    #         ### Neglecting some nodes since they are not translated to any operation on any backend
-    #         if node_iterating.op_type in self.layers_neglected:
-    #             for node in self.DORY_Graph[::-1]:
-    #                 if int(node_iterating.output[0]) > int(node.get_parameter('output_index')) and node.get_parameter("name") != "Constant":
-    #                     node.add_existing_parameter('output_index', node_iterating.output[0]) 
-    #                     break
-    #         # Adding a new layer
-    #         elif node_iterating.op_type in self.layers_accepted:
-    #             new_node = self.create_node(node_iterating, self.graph)
-    #             self.DORY_Graph.append(new_node)
-    #         else:
-    #             sys.exit("DORY Frontend. Node not parsed.")
+    
 
 
     print("Automatically generating project at location "+proj_folder)
