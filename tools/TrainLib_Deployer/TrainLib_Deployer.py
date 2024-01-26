@@ -49,7 +49,7 @@ parser = argparse.ArgumentParser(
                     prog='Deployer',
                     description='Generating C code for on-device training')
 
-parser.add_argument('--model_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/kws-on-pulp/application_dscnnl_gap8/model.onnx")
+parser.add_argument('--model_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/kws-on-pulp/quantization/model_fp32.pth")
 parser.add_argument('--project_name', type=str, default="examplenet/")
 parser.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/")
 args = parser.parse_args()
@@ -165,42 +165,47 @@ data_list = []
 # Call the DNN Reader and then the DNN Composer 
 if READ_MODEL_ARCH :
 
-    onnx_model = onnx.load(args.model_path)
-    onnx.checker.check_model(onnx_model)
-    onnx_graph = onnx_model.graph
-    m_onnx_graph = shape_inference.infer_shapes(onnx_model)
-    graph_offset = int(m_onnx_graph.graph.value_info[0].name)
-    graph_len = len(m_onnx_graph.graph.value_info)
-    
-    for onnx_node in m_onnx_graph.graph.node:
+    if (args.model_path.split('.')[-1] == "onnx"):
+        onnx_model = onnx.load(args.model_path)
+        onnx.checker.check_model(onnx_model)
+        onnx_graph = onnx_model.graph
+        m_onnx_graph = shape_inference.infer_shapes(onnx_model)
+        graph_offset = int(m_onnx_graph.graph.value_info[0].name)
+        graph_len = len(m_onnx_graph.graph.value_info)
+        
+        for onnx_node in m_onnx_graph.graph.node:
 
-        if (onnx_node.op_type == 'Gemm'):
-            in_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.input[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
-            if (int(onnx_node.input[0])-graph_offset == graph_len-1):
-                out_ch_list.append(m_onnx_graph.graph.output[0].type.tensor_type.shape.dim[1].dim_value) # ch x w
-            else:
-                out_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.output[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
-            layer_list.append('linear') 
-            hk_list.append(1)
-            wk_list.append(1)
-            hin_list.append(1)
-            win_list.append(1)
-            h_pad_list.append(0)
-            w_pad_list.append(0)
-            opt_mm_fw_list.append(0)
-            opt_mm_wg_list.append(0)
-            opt_mm_ig_list.append(0)
-            # TODO: Read from file
-            data_type_list.append('FP32')
-            # TODO: Read from file
-            # Note that this also determines the read position for in_ch_list and out_ch_list
-            data_layout_list.append('CHW')
+            if (onnx_node.op_type == 'Gemm'):
+                in_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.input[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
+                if (int(onnx_node.input[0])-graph_offset == graph_len-1):
+                    out_ch_list.append(m_onnx_graph.graph.output[0].type.tensor_type.shape.dim[1].dim_value) # ch x w
+                else:
+                    out_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.output[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
+                layer_list.append('linear') 
+                hk_list.append(1)
+                wk_list.append(1)
+                hin_list.append(1)
+                win_list.append(1)
+                h_pad_list.append(0)
+                w_pad_list.append(0)
+                opt_mm_fw_list.append(0)
+                opt_mm_wg_list.append(0)
+                opt_mm_ig_list.append(0)
+                # TODO: Read from file
+                data_type_list.append('FP32')
+                # TODO: Read from file
+                # Note that this also determines the read position for in_ch_list and out_ch_list
+                data_layout_list.append('CHW')
 
-            for init in onnx_graph.initializer:
-                if init.name == onnx_node.input[1]: # weights
-                    data_list.append(numpy_helper.to_array(init))
-                # if init.name == onnx_node.input[2]: # bias
-                    # TODO: Add bias
+                for init in onnx_graph.initializer:
+                    if init.name == onnx_node.input[1]: # weights
+                        data_list.append(numpy_helper.to_array(init))
+                    # if init.name == onnx_node.input[2]: # bias
+                        # TODO: Add bias
+    elif (args.model_path.split('.')[-1] == "pth"):
+        print("TODO")
+    else:
+        raise NotImplementedError("Model format not supported.")
 
     data_dir = proj_folder+'data/'
     if not os.path.exists(data_dir):
