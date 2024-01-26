@@ -34,9 +34,11 @@ Available DNN layer names:
 import utils.DNN_Reader     as reader
 import utils.DNN_Composer   as composer
 
+import os
 import argparse
 import onnx
 from onnx import shape_inference, numpy_helper
+import numpy as np
 
 # ---------------------
 # --- USER SETTINGS ---
@@ -48,7 +50,7 @@ parser = argparse.ArgumentParser(
                     description='Generating C code for on-device training')
 
 parser.add_argument('--model_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/kws-on-pulp/application_dscnnl_gap8/model.onnx")
-parser.add_argument('--project_name', type=str, default="examplenet")
+parser.add_argument('--project_name', type=str, default="examplenet/")
 parser.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/")
 args = parser.parse_args()
 
@@ -157,6 +159,7 @@ opt_mm_wg_list = []
 opt_mm_ig_list = []
 data_type_list = []
 data_layout_list = []
+data_list = []
 
 
 # Call the DNN Reader and then the DNN Composer 
@@ -193,29 +196,16 @@ if READ_MODEL_ARCH :
     m_onnx_graph = shape_inference.infer_shapes(onnx_model)
     graph_offset = int(m_onnx_graph.graph.value_info[0].name)
     graph_len = len(m_onnx_graph.graph.value_info)
-
-    print (onnx_graph.initializer[3])
-    # print (graph_offset)
-    # print (graph_len)
-
-    # print (m_onnx_graph.graph.value_info[0].type.tensor_type.shape.dim) # returns the activation sizes
-    # print (m_onnx_graph.graph.output[0].type.tensor_type.shape.dim) # returns the activation sizes
-    # print (m_onnx_graph.graph.input[0].type.tensor_type.shape.dim) # returns the activation sizes
-
     
     for onnx_node in m_onnx_graph.graph.node:
 
-        print (onnx_node)
-        print (onnx_node.attribute)
-
-        print ("-------------------------")
         if (onnx_node.op_type == 'Gemm'):
-            in_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.input[0])-graph_offset].type.tensor_type.shape.dim[0].dim_value)
+            in_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.input[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
             if (int(onnx_node.input[0])-graph_offset == graph_len-1):
-                out_ch_list.append(m_onnx_graph.graph.output[0].type.tensor_type.shape.dim[0].dim_value)
+                out_ch_list.append(m_onnx_graph.graph.output[0].type.tensor_type.shape.dim[1].dim_value) # ch x w
             else:
-                out_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.output[0])-graph_offset].type.tensor_type.shape.dim[0].dim_value)
-            layer_list.append('linear')
+                out_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.output[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
+            layer_list.append('linear') 
             hk_list.append(1)
             wk_list.append(1)
             hin_list.append(1)
@@ -232,24 +222,16 @@ if READ_MODEL_ARCH :
             data_layout_list.append('CHW')
 
             for init in onnx_graph.initializer:
-                if init.name == onnx_node.input[1]: # bias
-                    print (numpy_helper.to_array(init))
-                if init.name == onnx_node.input[2]: # weights
-                    print (numpy_helper.to_array(init))
-            
+                if init.name == onnx_node.input[1]: # weights
+                    data_list.append(numpy_helper.to_array(init))
+                # if init.name == onnx_node.input[2]: # bias
+                    # TODO: Add bias
 
-    # for attribute in node_iterating.attribute:
-    #         if attribute.name not in ['kernel_shape', 'dilations', 'group', 'strides', 'pads'] or self.name == "Pad":
-    #             if bool(attribute.i):
-    #                 self.__dict__[attribute.name] = int(attribute.i)
-    #             elif bool(attribute.f):
-    #                 self.__dict__[attribute.name] = int(attribute.f)
-    #             elif bool(attribute.ints):
-    #                 self.__dict__[attribute.name] = list(attribute.ints)
-    #             elif attribute.i == 0:
-    #                 self.__dict__[attribute.name] = 0
-    
-
+    data_dir = proj_folder+'data/'
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    for layer in layer_list:
+        np.save(data_dir+"l"+str(layer_list.index(layer))+"w.npy", data_list[layer_list.index(layer)])
 
     print("Automatically generating project at location "+proj_folder)
 
@@ -265,7 +247,7 @@ if READ_MODEL_ARCH :
                             layer_list, in_ch_list, out_ch_list, hk_list, wk_list, 
                             hin_list, win_list, h_str_list, w_str_list, h_pad_list, w_pad_list,
                             epochs, batch_size, learning_rate, optimizer, loss_fn,
-                            NUM_CORES, data_type_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list)
+                            NUM_CORES, data_type_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list, data_list)
 
     print("PULP project generation successful!")
 

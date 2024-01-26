@@ -218,9 +218,12 @@ def InitProject(proj_folder_path):
     proj_folder = proj_folder_path
     utils_folder = proj_folder + 'utils/'
     trainlib_dest_folder = proj_folder + 'lib/' 
+    data_folder = proj_folder+'data/'
     
-    os.mkdir(proj_folder)
-    os.mkdir(utils_folder)
+    if not os.path.exists(proj_folder):
+        os.makedirs(proj_folder)
+    if not os.path.exists(utils_folder):
+        os.makedirs(utils_folder)
 
     shutil.copy2('./utils/srcfiles/main.c', proj_folder)
     shutil.copy2('./utils/srcfiles/stats.h', proj_folder)
@@ -337,7 +340,7 @@ def GenerateGM(proj_folder_path, project_name,
                 layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l,
                 h_str_l, w_str_l, h_pad_l, w_pad_l,
                 epochs, batch_size, learning_rate, optimizer, loss_fn,
-                data_type_l):
+                data_type_l, data_list=None):
 
     # Print DNN structure
     print("---------- DNN ARCHITECTURE ----------")
@@ -354,6 +357,7 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("import torch.optim as optim\n")
     f.write("import dump_utils as dump\n")
     f.write("import math\n")
+    f.write("import numpy\n")
     f.write("\n")
 
     # Write sizes
@@ -557,6 +561,10 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("net = DNN()\n")
     f.write("for p in net.parameters():\n")
     f.write("\tnn.init.normal_(p, mean=0.0, std=1.0)\n")
+    if (data_list is not None):
+        for layer in range(len(layers_l)):
+            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.load('../data/l"+str(layer)+"w.npy')))\n")
+            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
     f.write("net.zero_grad()\n\n")
 
     # Write all-ones sample label
