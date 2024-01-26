@@ -202,8 +202,6 @@ if READ_MODEL_ARCH :
                         data_list.append(numpy_helper.to_array(init))
                     # if init.name == onnx_node.input[2]: # bias
                         # TODO: Add bias
-    elif (args.model_path.split('.')[-1] == "pth"):
-        print("TODO")
     else:
         raise NotImplementedError("Model format not supported.")
 
