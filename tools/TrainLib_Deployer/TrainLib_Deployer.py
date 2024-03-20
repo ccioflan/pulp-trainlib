@@ -49,9 +49,13 @@ parser = argparse.ArgumentParser(
                     prog='Deployer',
                     description='Generating C code for on-device training')
 
-parser.add_argument('--model_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/kws-on-pulp/application_dscnnl_gap8/model_fp32.onnx")
-parser.add_argument('--project_name', type=str, default="examplenet/")
-parser.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/")
+parser = argparse.ArgumentParser()
+parser._action_groups.pop()
+required = parser.add_argument_group('required arguments')
+optional = parser.add_argument_group('optional arguments')
+required.add_argument('--project_name', type=str, default="examplenet/", help='Project name', required=True)
+required.add_argument('--project_path', type=str, default="/usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/trainlib_example_dscnn/", help='Project path', required=True)
+optional.add_argument('--model_path', type=str, default=None, help='Pretrained model path')
 args = parser.parse_args()
 
 # GENERAL PROPERTIES
@@ -126,6 +130,8 @@ opt_mm_ig_list  = [0 ]
 data_type_list   = ['FP32']
 # Data layout list (CHW or HWC) 
 data_layout_list = ['CHW']   # TO DO
+# Pretrained parameters
+data_list = []
 # ----- END OF DS-CNN NETWORK GRAPH -----
 
 # EXECUTION PROPERTIES
@@ -134,7 +140,7 @@ L1_SIZE_BYTES   = 120*(2**10)
 
 # OTHER PROPERTIES
 # Select if to read the network from an external source
-READ_MODEL_ARCH = True                # NOT IMPLEMENTED!!
+READ_MODEL_ARCH = args.model_path                # NOT IMPLEMENTED!!
 
 # ---------------------------
 # --- END OF USER SETTING ---
@@ -145,25 +151,25 @@ READ_MODEL_ARCH = True                # NOT IMPLEMENTED!!
 BACKEND
 """
 
-layer_list = []
-in_ch_list = []
-out_ch_list = []
-hk_list = []
-wk_list = []
-hin_list = []
-win_list = []
-h_pad_list = []
-w_pad_list = []
-opt_mm_fw_list = []
-opt_mm_wg_list = []
-opt_mm_ig_list = []
-data_type_list = []
-data_layout_list = []
-data_list = []
-
-
 # Call the DNN Reader and then the DNN Composer 
 if READ_MODEL_ARCH :
+
+    layer_list = []
+    in_ch_list = []
+    out_ch_list = []
+    hk_list = []
+    wk_list = []
+    hin_list = []
+    win_list = []
+    h_pad_list = []
+    w_pad_list = []
+    opt_mm_fw_list = []
+    opt_mm_wg_list = []
+    opt_mm_ig_list = []
+    data_type_list = []
+    data_layout_list = []
+    
+
 
     if (args.model_path.split('.')[-1] == "onnx"):
         onnx_model = onnx.load(args.model_path)
@@ -175,7 +181,7 @@ if READ_MODEL_ARCH :
         
         for onnx_node in m_onnx_graph.graph.node:
 
-            if (onnx_node.op_type == 'Gemm'):
+            if (onnx_node.op_type == 'Gemm') or (onnx_node.op_type == 'MatMul'):
                 in_ch_list.append(m_onnx_graph.graph.value_info[int(onnx_node.input[0])-graph_offset].type.tensor_type.shape.dim[1].dim_value) # ch x w
                 if (int(onnx_node.input[0])-graph_offset == graph_len-1):
                     out_ch_list.append(m_onnx_graph.graph.output[0].type.tensor_type.shape.dim[1].dim_value) # ch x w
@@ -246,7 +252,7 @@ else:
                             layer_list, in_ch_list, out_ch_list, hk_list, wk_list, 
                             hin_list, win_list, h_str_list, w_str_list, h_pad_list, w_pad_list,
                             epochs, batch_size, learning_rate, optimizer, loss_fn,
-                            NUM_CORES, data_type_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list)
+                            NUM_CORES, data_type_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list, data_list)
 
     print("PULP project generation successful!")
 
