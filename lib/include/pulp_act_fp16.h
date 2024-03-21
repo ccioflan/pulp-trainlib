@@ -32,11 +32,56 @@ struct act_args_fp16 {
     struct blob_fp16 * output;
 };
 
+/**
+ * @brief Arguments for exponential and softmax in parallel
+ * @param input   pointer to input vector
+ * @param dim     dimension vector
+ * @param output  pointer to output vector
+ * @param sum     final sum value of all exponentials
+*/
+struct softmax_args_fp16{
+  struct blob_fp16 * input;
+  struct blob_fp16 * output;
+  int L;
+  int n_heads;
+  fp16 * maxes;
+  fp16 * sums;
+};
+
 
 
 /**
  * Activation functions, both FW and BW
  **/
+
+
+/**
+ * @brief Forward pass function. Configure and pass a act_args_fp16 structure pointer as argument.
+ * @param input Input for sigmoid.
+ * @param output Output of sigmoid.
+*/
+void pulp_sigmoid_fp16_fw_cl( void * act_args );
+
+/**
+ * @brief Backward pass function.
+ * @param input Input for sigmoid.
+ * @param output Output of sigmoid.
+*/
+void pulp_sigmoid_fp16_bw_cl( void * act_args );
+
+/**
+ * @brief Core function to implement the forward of sigmoid (allows parallelization, parallelize with pi_cl_team_fork(NUM_CORES, sigmoid_core_fw_fp16, &args)).
+ * @param act_args Input and output data (data only will be used)
+*/
+void sigmoid_core_fw_fp16( void * act_args );
+
+/**
+ * @brief Core function to implement the backward of sigmoid (allows parallelization, parallelize with pi_cl_team_fork(NUM_CORES, sigmoid_core_bw_fp16, &args)).
+ * @param act_args Input and output data (gradients only will be used)
+*/
+void sigmoid_core_bw_fp16( void * act_args );
+
+
 
 /**
  * @brief Forward pass function. Configure and pass a act_args structure pointer as argument.
@@ -51,6 +96,18 @@ void pulp_relu_fp16_fw_cl( void * act_args_fp16 );
  * @param output Output of relu.
 */
 void pulp_relu_fp16_bw_cl( void * act_args_fp16 );
+
+/**
+ * @brief Core function to implement the forward of ReLU (allows parallelization, parallelize with pi_cl_team_fork(NUM_CORES, relu_core_fw_fp16, &args)).
+ * @param act_args Input and output data (data only will be used)
+*/
+void relu_core_fw_fp16( void * act_args_fp16 );
+
+/**
+ * @brief Core function to implement the backward of ReLU (allows parallelization, parallelize with pi_cl_team_fork(NUM_CORES, relu_core_bw_fp16, &args)).
+ * @param act_args Input and output data (gradients only will be used)
+*/
+void relu_core_bw_fp16( void * act_args_fp16 );
 
 
 
@@ -67,3 +124,10 @@ void pulp_softmax_fp16_fw_cl( void * act_args_fp16 );
  * @param output Output of softmax.
 */
 void pulp_softmax_fp16_bw_cl( void * act_args_fp16 );
+
+/**
+ * @brief Forward pass function. Configure and pass a act_args structure pointer as argument.
+ * @param input Input for gelu.
+ * @param output Output of gelu.
+*/
+void pulp_gelu_fp16_fw_cl( void* act_args_fp16);

@@ -106,3 +106,27 @@ def AvgPool_template(layer, hk, wk, hstr, wstr, data_type):
         print("[GM_templates.AvgPool_template] Invalid data type!!")
         exit()
     return template
+
+'''
+SKIPCONN TEMPLATES
+'''
+
+def Skipnode_template(layer):                                       
+    template= "\t\tself.l"+str(layer) +" =Skipnode() #Skip layer\n"
+    return template                                             
+
+def Sumnode_template(layer, ls):                                        
+    template= "\t\tself.l"+str(layer) +f"= Sumnode({ls}) #Sumnode layer\n"
+    return template                                             
+
+
+'''
+NORMALIZATION TEMPLATE
+'''
+
+def InstNorm_template(layer, ch, data_type):
+    if data_type == 'FP32':
+        template = f"\t\tself.l{layer}= nn.InstanceNorm2d(num_features={ch}, eps=1e-10, momentum=0, affine=True)\n"
+    else:
+        template = f"\t\tself.l{layer}= nn.InstanceNorm2d(num_features={ch}, eps=1e-10, momentum=0, affine=True).half()\n"
+    return template

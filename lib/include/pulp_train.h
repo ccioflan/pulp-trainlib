@@ -41,6 +41,7 @@
 #include "pulp_residual_fp32.h"
 #include "pulp_rnn_fp32.h"
 #include "pulp_mhsa_fp32.h"
+#include "pulp_instnorm_fp32.h"
 
 
 // FP16 structures
@@ -57,4 +58,6 @@
 #include "pulp_optimizers_fp16.h"
 #include "pulp_pooling_fp16.h"
 #include "pulp_residual_fp16.h"
+#include "pulp_mhsa_fp16.h"
+#include "pulp_instnorm_fp16.h"
 

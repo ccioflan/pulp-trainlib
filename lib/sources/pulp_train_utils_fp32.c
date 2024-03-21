@@ -21,6 +21,7 @@
 #include "pmsis.h"
 #include "pulp_train_utils_fp32.h"
 #include "pulp_matmul_fp32.h"
+#include <math.h>
 
 
 int verify_tensor(float * tensor_out, float * tensor_ref, int size, float tolerance){
@@ -228,6 +229,292 @@ void CHW_to_HWC (void * layout_args)
 }
 
 
+void pad_tensor (void * pad_args) 
+{
+    struct pad_args * args = (struct pad_args*) pad_args;
+    float * source = args->source;
+    float * dest = args->dest;
+    int C = args->C;
+    int H = args->H;
+    int W = args->W;
+    int L_PAD = args->T_LPAD;
+    int R_PAD = args->T_RPAD;
+    int U_PAD = args->T_UPAD;
+    int D_PAD = args->T_DPAD;
+    int HWC = args->HWC_lay;
+    
+    int H_out = H + U_PAD + D_PAD;
+    int W_out = W + L_PAD + R_PAD;
+
+    int blockSize = (C+NUM_CORES-1) / NUM_CORES;
+    int start = pi_core_id()*blockSize;
+    int stop = start+blockSize > C ? C : start+blockSize;
+
+    if (HWC == 0) 
+    {
+        for (int ch=0; ch<C; ch++) 
+        {
+            for (int ht=0; ht<H_out; ht++) 
+            {
+                for (int wt=0; wt<W_out; wt++) 
+                {
+                    // Compute matrix idx
+                    int in_t_idx = (wt-L_PAD) + (ht-U_PAD)*W + ch*H*W;
+                    int out_t_idx = wt + ht*W_out + ch*H_out*W_out;
+                    // Padding conditions
+                    int zero_cond = (wt < L_PAD || wt > W) || (ht < U_PAD || ht > H);
+                    if (zero_cond == 1) { dest[out_t_idx] = 0; }
+                    else 
+                    {
+                        dest[out_t_idx] = source[in_t_idx];
+                    }
+                }
+            }
+        }
+    }
+    else if (HWC == 1)
+    {
+        for (int ht=0; ht<H_out; ht++) 
+        {
+            for (int wt=0; wt<W_out; wt++)
+            {
+                for (int ch=0; ch<C; ch++) 
+                {
+                    // Compute matrix idx
+                    int in_t_idx = ch + (wt-L_PAD)*C + (ht-U_PAD)*C*W;
+                    int out_t_idx = ch + wt*C + ht*C*W_out;
+                    // Padding conditions
+                    int zero_cond = (wt < L_PAD || wt > W) || (ht < U_PAD || ht > H);
+                    if (zero_cond == 1) { dest[out_t_idx] = 0; }
+                    else 
+                    {
+                        dest[out_t_idx] = source[in_t_idx];
+                    }                    
+                }
+            }
+        }
+    }
+    else 
+    {
+        printf("[pad_tensor] HWC layout not implemented!!");
+    }
+}
+
+
+void pulp_max_fp32_cl(void * void_args){
+    struct max_args* args = (struct max_args *) void_args;
+
+    float* input = args->input;
+    float max = args->maxes[pi_core_id()];
+    int dim = args->dim;
+
+    const int blockSize=(args->dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    for(int i=start; i<stop; i++)
+        if(max < input[i])
+            max = input[i];
+
+    args->maxes[pi_core_id()] = max;
+}
+
+float threshold(float x){
+  /*
+  float log2 = 0.6931471805599453f;
+  float log2_2 = 0.4804530139182014f;
+  float log2_3 = 0.3330246519889294f;
+  float log2_4 = 0.2308350985830834f;
+  float log2_5 = 0.1600026977571413f;
+  */
+
+  if(x >= 3.14f)
+    return 0.0f;
+
+  float x_2 = x*x;
+  float x_3 = x*x*x;
+  float x_4 = x*x*x*x;
+  float x_5 = x*x*x*x*x;
+
+  return (T1 - LOG2 * x + T2 * x_2 * LOG2_2 - T3 * x_3 * LOG2_3 + T4 * x_4 * LOG2_4 - T5 * x_5 * LOG2_5);
+}
+
+void pulp_row_max_fp32_cl(void * void_args){
+    struct max_args* args = (struct max_args *) void_args;
+
+    float* input = args->input;
+    int dim = args->dim; // L
+    int i, j;
+    float* max = args->maxes;
+    
+    const int blockSize=(dim + NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    input = input + start * dim;
+
+    for(i=start; i<stop; i++){
+        max[i] = *input;
+        input++;
+        for(j=1; j<dim; j++){
+            if(max[i] < *input)
+                max[i] = *input;
+            input++;    
+        }    
+    }
+}
+
+void pulp_shift_sum_fp32_cl(void* void_args){
+    struct shift_sum_args* args = (struct shift_sum_args *) void_args;
+
+    float* input = args->input;
+    float* output = args->output;
+    float* sums = args->sums;
+    int dim = args->dim;
+    float* maxes = args->maxes;
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    int row = 0;
+
+    for(int i=start; i<stop; i++){
+        sums[i] = 0;
+        row = i * dim;
+        for(int j=0; j<dim; j++){
+            float o = threshold(maxes[i] - input[row + j]);
+            /*float o = 1.0f - 0.5f *(maxes[i] - input[row + j]);
+            if(o < 0.0f)
+                o = 0.0f;*/
+            output[row + j] = o;
+            sums[i] += o;    
+        }   
+    }
+}
+
+float fastexp_gist(float x) {
+    x = GIST_A * x + GIST_B;
+
+    if (x < GIST_C || x > GIST_D)
+        x = (x < GIST_C) ? 0.0f : GIST_D;
+
+    uint32_t n = (uint32_t) (x);
+    return *(float*) &n;
+}
+
+float q_rsqrt(float number)
+{
+  long i;
+  float x2, y;
+  const float threehalfs = 1.5f;
+
+  x2 = number * 0.5f;
+  y  = number;
+  i  = * ( long * ) &y;                       // evil floating point bit level hacking
+  i  = 0x5f3759df - ( i >> 1 );               // what the fuck?
+  y  = * ( float * ) &i;
+  y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+
+  return y;
+}
+
+void pulp_exp_sum_fp32_cl(void* void_args){
+    struct exp_sum_args* args = (struct exp_sum_args *) void_args;
+
+    float* input = args->input;
+    float* output = args->output;
+    float* sums = args->sums;
+    int dim = args->dim;
+    float* maxes = args->maxes;
+    
+
+    #ifdef DEBUG
+    if(pi_core_id()==0){
+        int L = dim;
+        printf("\nCurrent input - max in softmax: %d %d\n", L, L);
+        for (int j=0; j<L*L; j++){
+            if(!(j%((int)L))) printf("\n");
+            printf("%.8f ", (input[j] - max));
+        }
+    }
+    printf("\n");
+    #endif
+
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    input += start * dim;
+    output += start * dim;
+
+    for(int i=start; i<stop; i++){
+        sums[i] = 0;
+        for(int j=0; j<dim; j++){
+            float o = fastexp_gist(*input - maxes[i]);
+            //float o = expf(*input - maxes[i]);
+            *output = o;
+            sums[i] += o;
+            input++;
+            output++;    
+        }   
+    }
+}
+
+void pulp_div_fp32_cl(void* void_args){
+    struct div_args* args = (struct div_args *) void_args;
+
+    float* input = args->input;
+    float n = args->n;
+    int dim = args->dim;
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    for(int i=start; i<stop; i++){
+        input[i] = input[i]/n;
+    }
+}
+
+void pulp_row_div_fp32_cl(void* void_args){
+    struct row_div_args* args = (struct row_div_args *) void_args;
+
+    float* input = args->input;
+    float* sums = args->sums;
+    int dim = args->dim;
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    int row = 0;
+
+    for(int i=start; i<stop; i++){
+        row = i * dim;
+        for(int j=0; j<dim; j++){
+            input[row + j] = input[row + j]/sums[i];    
+        }   
+    }
+}
+
+void pulp_scalar_mul_fp32_cl(void* void_args){
+    struct scalar_mul_args* args = (struct scalar_mul_args *) void_args;
+
+    float* input = args->input;
+    float scalar = args->scalar;
+    int dim = args->dim;
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = pi_core_id()*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    for(int i=start; i<stop; i++){
+        input[i] = input[i]*scalar;
+    }
+}
+
 
 
 /**
@@ -367,69 +654,6 @@ void mm_manager (void * void_args)
         }
         // End step selection
 
-    }
-
-// =====> DEPTHWISE CONVOLUTION
-    else if (layer_type == LAYER_DW_CONV) 
-    {
-
-        // Select step type
-        if (step_type == STEP_FW)
-        {
-            // Select matmul type
-            if      (matmul_type == 0)      { mm_dw((void *) matMul_DW_args); }
-            else if (matmul_type == 1)      { mm_dw_u2((void *) matMul_DW_args);}
-            else if (matmul_type == 2)      { mm_dw_u3((void *) matMul_DW_args);}
-            else if (matmul_type == 3)      { mm_dw_unroll_1x2((void *) matMul_DW_args);}
-            else if (matmul_type == 4)      { mm_dw_unroll_1x4((void *) matMul_DW_args);}
-            else if (matmul_type == 5)      { mm_dw_unroll_1x2_u2((void *) matMul_DW_args);}
-            else if (matmul_type == 6)      { mm_dw_unroll_1x4_u2((void *) matMul_DW_args);}
-            else
-            {
-                printf("\nWrong matmul selection!\n");
-            }
-            // End of matmul type selection
-        }
-
-        else if (step_type == STEP_WGT_GRAD) 
-        {
-            // Select matmul type
-            if      (matmul_type == 0)      { mm_dw((void *) matMul_DW_args); }
-            else if (matmul_type == 1)      { mm_dw_u2((void *) matMul_DW_args);}
-            else if (matmul_type == 2)      { mm_dw_u3((void *) matMul_DW_args);}
-            else if (matmul_type == 3)      { mm_dw_unroll_1x2((void *) matMul_DW_args);}
-            else if (matmul_type == 4)      { mm_dw_unroll_1x4((void *) matMul_DW_args);}
-            else if (matmul_type == 5)      { mm_dw_unroll_1x2_u2((void *) matMul_DW_args);}
-            else if (matmul_type == 6)      { mm_dw_unroll_1x4_u2((void *) matMul_DW_args);}
-            else
-            {
-                printf("\nWrong matmul selection!\n");
-            }
-            // End of matmul type selection
-        }
-
-        else if (step_type == STEP_IN_GRAD)
-        {
-            // Select matmul type
-            if      (matmul_type == 0)      { mm_dw_in_grad((void *) matMul_DW_args); }
-            else if (matmul_type == 1)      { mm_dw_in_grad_u2((void *) matMul_DW_args); }
-            else if (matmul_type == 2)      { mm_dw_in_grad_u3((void *) matMul_DW_args); }
-            else if (matmul_type == 3)      { mm_dw_in_grad_unroll_1x2((void *) matMul_DW_args); }
-            else if (matmul_type == 4)      { mm_dw_in_grad_unroll_1x4((void *) matMul_DW_args); }
-            else if (matmul_type == 5)      { mm_dw_in_grad_unroll_1x2_u2((void *) matMul_DW_args);}
-            else if (matmul_type == 6)      { mm_dw_in_grad_unroll_1x4_u2((void *) matMul_DW_args);}
-            else
-            {
-                printf("\nWrong matmul selection!\n");
-            }
-            // End of matmul type selection
-        }
-        else
-        {
-            printf("\nWrong step selection!!\n");
-        }
-        // End step selection
-        
     }
 
 // =====> POINTWISE CONVOLUTION
@@ -687,46 +911,52 @@ void mm_manager (void * void_args)
 
 }
 
-static inline float
-fasterpow2 (float p)
+void pulp_mean_std_fp32_cl(void * mean_std_args)
 {
-  float clipp = (p < -126) ? -126.0f : p;
-  union { uint32_t i; float f; } v = { (uint32_t) ( (1 << 23) * (clipp + 126.94269504f) ) };
-  return v.f;
+    struct mean_std_args * args = (struct mean_std_args *) mean_std_args;
+
+    float * data = args->input;
+    int D = args->dim;
+    float D_inverse = (1/(float)D);
+    float * mean = args->mean;
+    float * std = args->std;
+    float * var = args->var;
+    float epsilon = args->epsilon;
+
+    float m=0;
+    float v=0;
+    float s=0;
+
+    int var_was_infinite = 0;
+
+    for(int d=0; d<D; d++)
+        {
+            float t = data[d];
+            m += t;
+            v += t*t;
+        }
+        m = m*D_inverse;
+        v = v*D_inverse;
+
+        // Test for infinite variance
+        if (*(int *)&v == 0x7f80000)
+        {
+            var_was_infinite = 1;
+            v = 0;
+            for(int d=0; d<D; d++)
+            {
+                float t = data[d];
+                float temp = t - m;
+                v += temp*temp*D_inverse;
+            }
+        }
+
+        if(!var_was_infinite)   v -= m*m;
+        v = v + epsilon;
+        if ((v)<0) v=epsilon;
+        *mean = m;
+        *var = v;
+        *std = sqrtf(v);
 }
 
-static inline float
-fasterexp (float p)
-{
-  return fasterpow2 (1.442695040f * p);
-}
 
-void exponential(void* void_args){
-    struct softmax_args *args = ((struct softmax_args *)void_args);
-    float* input = args->input;
-    float* output = args->output;
-    int dim = args->dim;
-
-    const uint32_t blockSize = (dim+NUM_CORES-1) / NUM_CORES;
-    const uint32_t start = pi_core_id()*blockSize;
-    const uint32_t stop = start+blockSize > dim ? dim : start+blockSize;
-
-    for(int i = start; i < stop; i++){
-        output[i] = fasterexp(input[i]);
-    }
-}
-
-void softmax(void* void_args){
-    struct softmax_args *args = ((struct softmax_args *)void_args);
-    float* output = args->output;
-    int dim = args->dim;
-    float sum = args->sum;
-
-    const uint32_t blockSize = (dim+NUM_CORES-1) / NUM_CORES;
-    const uint32_t start = pi_core_id()*blockSize;
-    const uint32_t stop = start+blockSize > dim ? dim : start+blockSize;
-
-    for(int i = start; i < stop; i++){
-        output[i] = output[i] / sum;
-    }
-}
