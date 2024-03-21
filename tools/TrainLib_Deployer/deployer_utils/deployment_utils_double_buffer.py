@@ -153,7 +153,8 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("\n// Define structures and pointers to data in L1 memory\n")
     if data_type == 'FP32':
         #f.write("PI_L1 float * D0, * d0, * W0, * w0, * D1, * d1, * W1, *w1;\n")
-        f.write("PI_L1 float BUFF[MAX_SIZE];\n")
+        # f.write("PI_L1 float BUFF[MAX_SIZE];\n")
+        f.write("PI_L1 float * BUFF;\n")
         f.write("PI_L1 struct blob d1_blob;\n")
         f.write("PI_L1 struct blob w1_blob;\n")
         f.write("PI_L1 struct blob d0_blob;\n")
@@ -173,7 +174,7 @@ def GenerateNet(proj_folder_path, project_name,
         #f.write("PI_L1 float * t;\n")
     elif data_type == 'FP16':
         f.write("PI_L1 fp16 * D1, * d1, * W1, * w1, * D0, * d0, * W0, *w0;\n")
-        f.write("PI_L1 fp16 BUFF[MAX_SIZE];\n")
+        # f.write("PI_L1 fp16 BUFF[MAX_SIZE];\n")
         f.write("PI_L1 struct blob_fp16 d1_blob;\n")
         f.write("PI_L1 struct blob_fp16 w1_blob;\n")
         f.write("PI_L1 struct blob_fp16 d0_blob;\n")
@@ -567,15 +568,19 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("\n// DNN initialization function\n")
     f.write("void DNN_init()\n{\n")
     f.write("\n// Assign pointers in L1\n")
-    f.write("d0_blob.data = BUFF;\n")
-    f.write("d0_blob.diff = BUFF;\n")
-    f.write("w0_blob.data = BUFF;\n")
-    f.write("w0_blob.diff = BUFF;\n")
-    f.write("d1_blob.data = BUFF + MAX_SIZE/2;\n")
-    f.write("d1_blob.diff = BUFF + MAX_SIZE/2;\n")
-    f.write("w1_blob.data = BUFF + MAX_SIZE/2;\n")
-    f.write("w1_blob.diff = BUFF + MAX_SIZE/2;\n")
-    f.write("reset_arguments();\n\n")
+    if (data_type == "FP32"):
+        f.write("  BUFF = (float *) pi_l1_malloc(NULL, MAX_SIZE);\n")
+    elif (data_type == "FP16"):
+        f.write("  BUFF = (fp16 *) pi_l1_malloc(NULL, MAX_SIZE);\n")
+    f.write("  d0_blob.data = BUFF;\n")
+    f.write("  d0_blob.diff = BUFF;\n")
+    f.write("  w0_blob.data = BUFF;\n")
+    f.write("  w0_blob.diff = BUFF;\n")
+    f.write("  d1_blob.data = BUFF + MAX_SIZE/2;\n")
+    f.write("  d1_blob.diff = BUFF + MAX_SIZE/2;\n")
+    f.write("  w1_blob.data = BUFF + MAX_SIZE/2;\n")
+    f.write("  w1_blob.diff = BUFF + MAX_SIZE/2;\n")
+    f.write("  reset_arguments();\n\n")
     for layer in range(len(layers_l)):
         if layer == 0:
             f.write("  // Layer "+str(layer)+"\n")
@@ -608,7 +613,7 @@ def GenerateNet(proj_folder_path, project_name,
 
     # Mixed precision check
     C_data_type = 'float'
-    f.write("\n  // Connect tensors to blobs\n")
+    f.write("\n// Connect tensors to blobs\n")
     previous_was_skip = 0
     
     for layer in range(len(layers_l)):
@@ -1419,6 +1424,9 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("  printf(\"Checking updated output..\\n\");\n")
     f.write("  check_post_training_output();\n")
     f.write("  print_output();\n")
+
+    f.write("  // Free l1 buffer\n")
+    f.write("  pi_l1_free(NULL, BUFF, MAX_SIZE);\n")
 
     f.write("}\n")
 
