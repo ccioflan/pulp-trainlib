@@ -201,7 +201,7 @@ def DNN_Composer (proj_folder_path, project_name,
                         layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l,
                         h_str_l, w_str_l, h_pad_l, w_pad_l,
                         epochs, batch_size, learning_rate, optimizer, loss_fn,
-                        data_type_l, sumnode_connections, USE_DMA)
+                        data_type_l, sumnode_connections, USE_DMA, data_list)
 
 
     global MAX_LAYER_DIM
