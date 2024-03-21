@@ -558,12 +558,16 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n# Initialize network\n")
     f.write("net = DNN().to(device)\n")
     f.write("for p in net.parameters():\n")
+    f.write("\tprint (p)\n")
     f.write("\tnn.init.normal_(p, mean=0.0, std=1.0)\n")
-    if (data_list):
-        for layer in range(len(layers_l)):
-            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))))\n")
-            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
+    # if (data_list):
+    #     for layer in range(len(layers_l)):
+    #         f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))), requires_grad=True)\n")
+    #         # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
     f.write("net.zero_grad()\n\n")
+    f.write("for p in net.parameters():\n")
+    f.write("\tprint (p)\n")
+
 
     # Write all-ones sample label
     f.write("\n# All-ones fake label \n")
