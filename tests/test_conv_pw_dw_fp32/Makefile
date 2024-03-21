@@ -17,7 +17,7 @@ DPAD?=0
 HSTR?=1
 WSTR?=1
 # Others
-NUM_CORES?=8
+NUM_CORES?=1
 STEP?='DW_FORWARD' 	# Steps: 'DW_FORWARD', 'DW_BACKWARD_GRAD', 'DW_BACKWARD_ERROR', 'PW_FORWARD', 'PW_BACKWARD_GRAD', 'PW_BACKWARD_ERROR'
 HWC_layout?=0				# Choose if data layout is CHW (=0) or HWC (=1)
 # Optimization

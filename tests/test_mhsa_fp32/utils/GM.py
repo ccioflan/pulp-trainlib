@@ -28,6 +28,7 @@ import mhsa
 
 # Set the seed for reproducability
 np.random.seed(seed=1) # <----- Sneed
+torch.manual_seed(0)
 
 
 ##################################################################################################################################
@@ -137,11 +138,14 @@ def hook_fn2(m, i, o):
 
 gradsRnn = net.mhsa.register_full_backward_hook(hook_fn1)
 
+'''
 inp = torch.div(torch.ones(ch_in, in_h, in_w), 1000)
 for cin in range(ch_in):
   for hi in range(in_h):
     for wi in range(in_w):
       inp[cin, hi, wi] += (cin + hi - wi)*(cin + hi + wi) * 1/1e5
+'''
+inp = torch.randn(ch_in, in_h, in_w)
 
 inp.requires_grad = True
 
@@ -152,10 +156,13 @@ print("------------Input sequence------------")
 f = open("input-sequence.h", "w")
 f.write("#define INPUT_SIZE "+str(inp.numel())+'\n')
 print(inp)
+
+inp_copy = torch.transpose(inp, -1, -2)
+
 if current_step=='FORWARD':
-  f.write('PI_L2 float INPUT[INPUT_SIZE] = {'+dump.tensor_to_string(inp)+'};\n')
+  f.write('PI_L2 float INPUT[INPUT_SIZE] = {'+dump.tensor_to_string(inp_copy)+'};\n')
 else:
-  f.write('PI_L2 float INPUT[INPUT_SIZE] = {'+dump.tensor_to_string(inp)+'};\n')
+  f.write('PI_L2 float INPUT[INPUT_SIZE] = {'+dump.tensor_to_string(inp_copy)+'};\n')
 f.close()
 
 
@@ -165,17 +172,21 @@ print("Shape input weights:")
 print(net.mhsa.proj_in.weight.shape)
 print(net.mhsa.proj_in.weight.data)
 print("\n")
+
+'''
 in_wgt_init_tensor = torch.zeros(att_dim * 3, in_w)
 for hk in range(att_dim * 3):
     for wk in range(in_w):
         in_wgt_init_tensor[hk, wk] = (hk+wk)*weight_init
+'''
+in_wgt_init_tensor = torch.randn(att_dim * 3, in_w)
 #Initialize input weights
 with torch.no_grad():
     #net.conv.weight[:, :] = weight_init
     net.mhsa.proj_in.weight.data = deepcopy(in_wgt_init_tensor)
     #net.rnn.bias_ih_l0[:] = 0.0
 
-in_wgt_init_tensor = torch.transpose(in_wgt_init_tensor, 0, 1)
+#in_wgt_init_tensor = torch.transpose(in_wgt_init_tensor, 0, 1)
 
 # Print input weights to init file
 f = open("init-defines.h", 'a')
@@ -191,10 +202,13 @@ print("Shape output projection weights:")
 print(net.mhsa.proj_out.weight.data.shape)
 print(net.mhsa.proj_out.weight.data)
 print("\n")
+'''
 output_proj_wgt_init_tensor = torch.zeros(in_w, att_dim)
 for hk in range(in_w):
     for wk in range(att_dim):
         output_proj_wgt_init_tensor[hk, wk] = (hk+wk)*weight_init
+'''
+output_proj_wgt_init_tensor = torch.randn(in_w, att_dim)
 #Initialize output weights
 with torch.no_grad():
     net.mhsa.proj_out.weight.data = deepcopy(output_proj_wgt_init_tensor)
@@ -217,9 +231,11 @@ print(label.size())
 print(out)
 loss = criterion(out, label)
 
+out_copy = torch.transpose(out, -1, -2)
+
 f = open("mhsa-output.h", "w")
 f.write('#define OUTPUT_SIZE '+str(out.numel())+'\n')
-f.write('PI_L2 float OUTPUT[OUTPUT_SIZE] = {'+dump.tensor_to_string(out)+'};\n')
+f.write('PI_L2 float OUTPUT[OUTPUT_SIZE] = {'+dump.tensor_to_string(out_copy)+'};\n')
 f.close()
 
 

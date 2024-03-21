@@ -176,6 +176,32 @@ struct cast_16t32_args {
 };
 
 /**
+ * @brief Arguments for the pad_tensor
+ * @param source Tensor to be padded
+ * @param dest Padded tensor
+ * @param C Channels of the tensor
+ * @param H Height of the tensor
+ * @param W Width of the tensor
+ * @param RPAD Right padding
+ * @param LPAD Left padding
+ * @param UPAD Upper padding
+ * @param DPAD Lower padding
+ * @param HWC_lay Set to 0 if CHW layout, 1 if HWC
+*/
+struct pad_args {
+  float * source;
+  float * dest;
+  int C;
+  int H;
+  int W;
+  int T_RPAD;
+  int T_LPAD;
+  int T_UPAD;
+  int T_DPAD;
+  int HWC_lay;
+};
+
+/**
  * @brief Arguments for standard matrix multiplication C=A*B (A=N*K, B=K*M, result is C=N*M)
  * @param A  pointer to input matrix A
  * @param B  pointer to input matrix B
@@ -221,25 +247,16 @@ struct matMul_args {
 };
 
 /**
- * @brief Arguments for depthwise matrix multiplication (A=N*K, B=K*M, result is C=N*M)
- * @param A  pointer to input matrix A
- * @param B  pointer to input matrix B
- * @param C  pointer to output matrix C
- * @param N  rows of A
- * @param M  columns of B
- * @param K  columns of A / rows of B
- * @param ker_size  size of the kernel involved in the matrix multiplication
- */
-struct matMul_DW_args {
-  float * __restrict__ A;
-  float * __restrict__ B;
-  float * __restrict__ C;
-  int N;
-  int M;
-  int K;
-  int ker_size;
+ * @brief Arguments for the naive core kernel of DepthWise Convolution (forward and backward)
+ * @param input pointer to the input blob
+ * @param weight pointer to the weight blob
+ * @param output pointer to the output blob
+*/
+struct kernel_DW_args {
+  struct blob * input;
+  struct blob * weights;
+  struct blob * output;
 };
-
 
 /**
  * @brief Arguments for mm_manager function, which selects which matmul to be executed.
@@ -272,20 +289,6 @@ struct tanh_args{
 };
 
 /**
- * @brief Arguments for exponential and softmax in parallel
- * @param input   pointer to input vector
- * @param dim     dimension vector
- * @param output  pointer to output vector
- * @param sum  	  final sum value of all exponentials
-*/
-struct softmax_args{
-  float* input;
-  int dim;
-  float* output;
-  float sum;
-};
-
-/**
  * @brief Arguments weight updates output=output + gradient
  * @param accum    pointer to weight gradient accumulators
  * @param grad    pointer to weight gradient of the current timestep
@@ -297,6 +300,110 @@ struct update_weight_args{
   int dim;
 };
 
+/**
+ * @brief Arguments for implementing parallelized max on an input vector
+ * @param input   input vector on which we want to find the max
+ * @param maxes   vector on which each core saves the max they have found
+ * @param dim     dimension of input
+ * @param dim     dimension of input^2
+*/
+struct max_args{
+  float* input;
+  float* maxes;
+  int dim;
+  int dim2;
+};
+
+/**
+ * @brief Arguments for implementing parallelized exponential and sum on an input vector
+ * @param input   input vector on which we want to calculate the exponential and summatory
+ * @param sums    vector on which each core saves their sum
+ * @param output  vector where the exponential is saved
+ * @param dim     dimension of input
+ * @param max     maximum value of the input map
+*/
+struct exp_sum_args{
+  float* input;
+  float* sums;
+  float* output;
+  int dim;
+  float* maxes;
+};
+
+/**
+ * @brief Arguments for implementing parallelized exponential and sum on an input vector
+ * @param input   input vector on which we want to calculate the exponential and summatory
+ * @param sums    vector on which each core saves their sum
+ * @param output  vector where the exponential is saved
+ * @param dim     dimension of input
+ * @param dim     dimension of input^2
+ * @param maxes   maximum value for each row of the input map
+*/
+struct shift_sum_args{
+  float* input;
+  float* sums;
+  float* output;
+  int dim;
+  int dim2;
+  float* maxes;
+};
+
+/**
+ * @brief Arguments for implementing parallelized division of an input vector and a scalar
+ * @param input   input vector we want to divide
+ * @param n       scalar value we want to divide the vector with
+ * @param dim     dimension of input
+*/
+struct div_args{
+  float* input;
+  float n;
+  int dim;
+};
+
+/**
+ * @brief Arguments for implementing parallelized division of an input vector and a vector
+ * @param input   input vector we want to divide
+ * @param sums    values we want to divide the vector with
+ * @param dim     dimension of input
+ * @param dim2    dimension of input^2
+*/
+struct row_div_args{
+  float* input;
+  float* sums;
+  int dim;
+  int dim2;
+};
+
+/**
+ * @brief Arguments for implementing parallelized multiplication of an input vector and a scalar
+ * @param input   input vector we want to multiply
+ * @param scalar  scalar value we want to divide the vector with
+ * @param dim     dimension of input
+*/
+struct scalar_mul_args{
+  float* input;
+  float scalar;
+  int dim;
+};
+
+
+/**
+ * @brief Arguments for calculating mean, variance and standard deviation of a vector
+ * @param input   input vector
+ * @param mean    calculated mean
+ * @param var    calculated var
+ * @param std    calculated std
+ * @param epsilon small number used to avoid division by zero
+ * @param dim     dimension of input
+*/
+struct mean_std_args{
+  float* input;
+  float* mean;
+  float* var;
+  float* std;
+  float epsilon;
+  int dim;
+};
 
 /**
  * =====> FUNCTIONS <=====
@@ -356,6 +463,12 @@ void HWC_to_CHW (void * layout_args);
 void CHW_to_HWC (void * layout_args);
 
 /**
+ * @brief Pad a tensor into a destination buffer specifying its size and the spatial sizes of the padding. Parallelize with pi_cl_team_fork(NUM_CORES, pad_tensor, &args).
+ * @param (void *) (struct pad_args pad_args)
+*/
+void pad_tensor (void * pad_args);
+
+/**
  * @brief Selects the matmul to be executed in the selected layer. Use pi_cl_team_fork(NUM_CORES, mm_manager, &args) to parallelize.
  * @param (void *) (struct mm_manager_args void_args)
  */
@@ -373,9 +486,68 @@ void exponential (void * void_args);
  */
 void softmax (void * void_args);
 
+/**
+ * @brief Calculate the maxes of a vector in parallelized fashion
+ * @param (void *)  (struct max_args void_args)
+ */
+void pulp_max_fp32_cl(void * void_args);
+
+/**
+ * @brief Calculate the maxes for each row of a square matrix in parallelized fashion
+ * @param (void *)  (struct max_args void_args)
+ */
+void pulp_row_max_fp32_cl(void * void_args);
+
+/**
+ * @brief Calculate the exponential of each element and sum them
+ * @param (void *)  (struct exp_sum_args void_args)
+ */
+void pulp_exp_sum_fp32_cl(void* void_args);
+
+/**
+ * @brief Calculate the 1/2^diff of each element and sum them
+ * @param (void *)  (struct exp_sum_args void_args)
+ */
+void pulp_shift_sum_fp32_cl(void* void_args);
+
+/**
+ * @brief Element-wise division of vector with a single constant
+ * @param (void *)  (struct div_args void_args)
+ */
+void pulp_div_fp32_cl(void* void_args);
+
+/**
+ * @brief Element-wise division of vector with values obtained by shit_sum
+ * @param (void *)  (struct div_args void_args)
+ */
+void pulp_row_div_fp32_cl(void* void_args);
+
+/**
+ * @brief Element-wise multiplication of vector with a single constant
+ * @param (void *)  (struct scalar_mul_args void_args)
+ */
+void pulp_scalar_mul_fp32_cl(void* void_args);
+
+float threshold(float x);
 
 static inline float
 fasterexp (float p);
 
 static inline float
 fasterpow2 (float p);
+
+/**
+ * @brief Mean, Variance and standard deviation calculation of a vector
+ * @param (void *)  (struct mean_std_args void_args)
+ */
+void pulp_mean_std_fp32_cl(void * mean_std_args);
+
+/**
+ * @brief Approximated version of exponential using bit manipulation of mantissa and exponent. Returns the exponential of x.
+ * @param x floating-point number to be exponentiated
+ */
+float fastexp_gist(float x);
+
+float q_rsqrt(float number);
+
+

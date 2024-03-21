@@ -48,7 +48,7 @@ PULP-TrainLib is the first open-source training library for RISC-V-based multico
 
 ![PULP-TrainLib's Primitives](./assets/img/pulp-trainlib-primitives.png)
 
-Note that every training step for each layer is implemented as a Matrix Multiplication (MM) between tensor data. For a Conv2D and Fully-Connected Layer, the structure and sizes of the involved matrices can be represented as follows:
+Note that every training step for most of the layers are implemented as a Matrix Multiplication (MM) between tensor data. E.g., for a Conv2D and Fully-Connected Layer, the structure and sizes of the involved matrices can be represented as follows:
 
 ![MM-based training primitives](./assets/img/pulp-trainlib-mm-flow.png)
 
@@ -98,11 +98,11 @@ Please refer to the links to correctly setup your working environment.
 
 ## Python - PyTorch requirements
 
-To successfully run the tests, Python (>= 3.6) is needed, together with PyTorch 1.9.0. To install the dependencies (with CPU only), run:
+To successfully run the tests, Python (>= 3.6) is needed, together with PyTorch (>= 1.9.0). To install the dependencies (with CPU only), run:
 
 ```
 python -m pip install argparse 
-python -m pip install torch==1.9.0+cpu torchvision==0.10.0+cpu torchaudio==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
+python -m pip install install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 python -m pip install torchsummary
 ```
 
@@ -110,11 +110,11 @@ If you require the GPU (CUDA 10.2) version for your applications, instead run:
 
 ```
 python -m pip install argparse 
-python -m pip install torch==1.9.0+cu102 torchvision==0.10.0+cu102 torchaudio==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
+python -m pip install torch torchvision torchaudio
 python -m pip install torchsummary
 ```
 
-It is recommended to run the tests with torch version "1.9.0+cpu".
+The tests have been verified using torch version "1.9.0+cpu".
 
 
 ## PULP-TrainLib
@@ -149,31 +149,35 @@ PULP-TrainLib's repository is organized with these branches:
 - [X] Forward passes for DepthWise, PointWise and 2D Convolution, Fully-Connected (FP32, FP16)
 - [X] Weight gradients for DepthWise, PointWise and 2D Convolution, Fully-Connected (FP32, FP16)
 - [X] Input gradients for DepthWise and PointWise Convolution, Fully-Connected, Conv2D (FP32, FP16)
-- [X] CWH data layout for PointWise and 2D Convolutions (FP32, FP16)
+- [X] CWH data layout for DepthWise, PointWise and 2D Convolutions (FP32, FP16)
 - [X] HWC data layout for PointWise Convolution (FP32, FP16) and 2D Convolutions (FP32, FP16)
 - [X] ReLU activation function (FP32, FP16)
+- [X] Sigmoid activation function (FP32, FP16)
 - [X] Gradient Descent optimizer (FP32, FP16)
 - [X] Max and Average Pooling (FP32, FP16)
 - [X] RNN training primitives (FP32)
 - [X] Multihead Self Attention training primitives (FP32)
+- [X] Residual connection (FP32, FP16)
+- [X] InstanceNorm (FP32, FP16)
 - [ ] Padding operators for DepthWise and 2D Convolution
-- [ ] CHW data layout for DepthWise Convolution (FP32, FP16)
+- [ ] HWC data layout management for DepthWise Convolution (FP32, FP16)
 - [ ] Stride operators for 2D Convolutions and DepthWise
-- [ ] Verification of all layer steps and adaptation of the tests to the new features (stride, padding)
 - [ ] RNN training primitives (FP16)
 - [ ] Multihead Self Attention training primitives (FP16)
-- [ ] Residual connection
 - [ ] Biases for all layers
+- [ ] Migration to graph-managed padding (TrainLib_Deployer)
+- [ ] Fix of TrainLib_Deployer to support new graph-level optimizations of layers
 
 # Known bugs / issues (open for contributions)
 
-- FP32/FP16 Weight Gradient for the Depthwise Convolutions (CHW, still not converging to GM)
 - AutoTuner working with "NUM_TILING_SOLUTIONS = 1"
 - Sporadic bugs in "mm_u2" in FP32 (mostly on leftovers)
 - Performance bugs in im2col/im2row with DMA loading (performances tend to be less than im2col/im2row with cores)
-- Missing test for residual connections
-- Missing integration for both residual connections and RNN / MHSE in TrainLib_Deployer
+- Missing integration for RNN / MHSE in TrainLib_Deployer
 - FP32 MHSA primitives (Input Grad)
+- FP32 and FP16 InstanceNorm's output do not perfectly match PyTorch ones (need bugfixing)
+- Missing integration of sigmoid function in TrainLib_Deployer
+- Performances of FP16 sigmoid may need to be optimized with FP16 exponenetial (e.g., https://github.com/0xBYTESHIFT/fp16/blob/master/include/half/half.hpp)
 
 
 # Contributors
@@ -184,6 +188,7 @@ PULP-TrainLib's repository is organized with these branches:
 - Alberto Dequino (alberto.dequino@unibo.it, alberto.dequino@polito.it)
 - Manuele Rusci (manuele.rusci@kuleuven.be)
 - Francesco Conti (f.conti@unibo.it)
+- Giacomo Saporetti (giacomo.saporetti@studio.unibo.it)
 
 ## Past Contributors
 
@@ -195,4 +200,5 @@ PULP-TrainLib's repository is organized with these branches:
 
 > D. Nadalini, M. Rusci, L. Benini, and F. Conti, "Reduced Precision Floating-Point Optimization for Deep Neural Network On-Device Learning on MicroControllers" [ArXiv Pre-Print](https://arxiv.org/abs/2305.19167)
 > 
-> D. Nadalini, M. Rusci, G. Tagliavini, L. Ravaglia, L. Benini, and F. Conti, "PULP-TrainLib: Enabling On-Device Training for RISC-V Multi-Core MCUs through Performance-Driven Autotuning" [SAMOS Pre-Print Version](https://www.samos-conference.com/Resources_Samos_Websites/Proceedings_Repository_SAMOS/2022/Papers/Paper_14.pdf)
+> D. Nadalini, M. Rusci, G. Tagliavini, L. Ravaglia, L. Benini, and F. Conti, "PULP-TrainLib: Enabling On-Device Training for RISC-V Multi-Core MCUs through Performance-Driven Autotuning" [SAMOS Pre-Print Version](https://www.samos-conference.com/Resources_Samos_Websites/Proceedings_Repository_SAMOS/2022/Papers/Paper_14.pdf), [Springer Published Version](https://link.springer.com/chapter/10.1007/978-3-031-15074-6_13)
+
