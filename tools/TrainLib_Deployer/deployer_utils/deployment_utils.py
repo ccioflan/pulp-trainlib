@@ -344,11 +344,7 @@ def GenerateGM(proj_folder_path, project_name,
                 layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l,
                 h_str_l, w_str_l, h_pad_l, w_pad_l,
                 epochs, batch_size, learning_rate, optimizer, loss_fn,
-<<<<<<< HEAD:tools/TrainLib_Deployer/utils/deployment_utils.py
-                data_type_l, data_list):
-=======
-                data_type_l, sumnode_connections, USE_DMA):
->>>>>>> upstream/main:tools/TrainLib_Deployer/deployer_utils/deployment_utils.py
+                data_type_l, sumnode_connections, USE_DMA, data_list):
 
     # Check if GPU is available, else keep fake FP16
     cuda_is_on = torch.cuda.is_available()
@@ -591,15 +587,9 @@ def GenerateGM(proj_folder_path, project_name,
                 f.write("f.write(f'#define WGT_SIZE_L" + f"{layer}" + "  2*{" + f"l{layer}_in_ch" + "}\\n')\n")
                 dump = f"+dump.tensor_to_string(net.l{layer}.weight.data)+dump.tensor_to_string(net.l{layer}.bias.data)+"
             if data_type_l[layer] == 'FP32':
-<<<<<<< HEAD:tools/TrainLib_Deployer/utils/deployment_utils.py
-                f.write("f.write('PI_L2 float init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"];\\n')\n")
-            elif data_type_l[layer] == 'FP16':
-                f.write("f.write('PI_L2 fp16 init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"];\\n')\n")
-=======
                 f.write("f.write('PI_L2 float init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'"+dump+"'};\\n')\n")
             elif data_type_l[layer] == 'FP16':
                 f.write("f.write('PI_L2 fp16 init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'"+dump+"'};\\n')\n")
->>>>>>> upstream/main:tools/TrainLib_Deployer/deployer_utils/deployment_utils.py
             else:
                 print("[deployment_utils.GenerateGM] Error in data type definition! (weight init)")
                 exit()
@@ -664,34 +654,20 @@ def GenerateGM(proj_folder_path, project_name,
     if USE_DMA == 'SB' or USE_DMA == 'DB':
         memory_loc = 'L2'
     if data_type_l[0] == 'FP32':
-<<<<<<< HEAD:tools/TrainLib_Deployer/utils/deployment_utils.py
-        f.write("f.write('PI_L1 float IN_DATA[IN_SIZE];\\n')\n")
-    elif data_type_l[0] == 'FP16':
-        f.write("f.write('PI_L1 fp16 IN_DATA[IN_SIZE];\\n')\n")
-=======
         f.write(f"f.write('PI_{memory_loc} float INPUT[IN_SIZE] ="+" {'+dump.tensor_to_string(inp)+'};\\n')\n")
     elif data_type_l[0] == 'FP16':
         f.write(f"f.write('PI_{memory_loc} fp16 INPUT[IN_SIZE] ="+" {'+dump.tensor_to_string(inp)+'};\\n')\n")
->>>>>>> upstream/main:tools/TrainLib_Deployer/deployer_utils/deployment_utils.py
     else:
         print("[deployment_utils.GenerateGM] Invalid input data size!")
     f.write("out_size = (int(math.floor(l"+str(last_layer)+"_hin-l"+str(last_layer)+"_hk+2*l"+str(last_layer)+"_hpad+l"+str(last_layer)+"_hstr)/l"+str(last_layer)+"_hstr)) * (int(math.floor(l"+str(last_layer)+"_win-l"+str(last_layer)+"_wk+2*l"+str(last_layer)+"_wpad+l"+str(last_layer)+"_wstr)/l"+str(last_layer)+"_wstr)) * l"+str(last_layer)+"_out_ch\n") 
     f.write("f.write('#define OUT_SIZE '+str(out_size)+'\\n')\n")
     # Fake output data and label definition
     if data_type_l[-1] == 'FP32':
-<<<<<<< HEAD:tools/TrainLib_Deployer/utils/deployment_utils.py
-        f.write("f.write('PI_L2 float REFERENCE_OUTPUT[OUT_SIZE];\\n')\n")
-        f.write("f.write('PI_L1 float LABEL[OUT_SIZE];\\n')\n")
-    elif data_type_l[-1] == 'FP16':
-        f.write("f.write('PI_L2 fp16 REFERENCE_OUTPUT[OUT_SIZE];\\n')\n")
-        f.write("f.write('PI_L1 fp16 LABEL[OUT_SIZE];\\n')\n")    
-=======
         f.write("f.write('PI_L2 float REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
         f.write(f"f.write('PI_{memory_loc} float LABEL[OUT_SIZE] = "+"{'+dump.tensor_to_string(label)+'};\\n')\n")
     elif data_type_l[-1] == 'FP16':
         f.write("f.write('PI_L2 fp16 REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
         f.write(f"f.write('PI_{memory_loc} fp16 LABEL[OUT_SIZE] = "+"{'+dump.tensor_to_string(label)+'};\\n')\n")    
->>>>>>> upstream/main:tools/TrainLib_Deployer/deployer_utils/deployment_utils.py
     else:
         print("[deployment_utils.GenerateGM] Invalid output data size!")
 
@@ -1146,16 +1122,11 @@ def GenerateNet(proj_folder_path, project_name,
     for layer in range(len(layers_l)):
         if layer == 0:
             f.write("  // Layer "+str(layer)+"\n")
-<<<<<<< HEAD:tools/TrainLib_Deployer/utils/deployment_utils.py
-            f.write("  for(int i=0; i<Tin_C_l0*Tin_H_l0*Tin_W_l0; i++)\t\t\tl0_in[i] = IN_DATA[i];\n")
-            f.write("  for(int i=0; i<Tin_C_l0*Tout_C_l0*Tker_H_l0*Tker_W_l0; i++)\t\tl0_ker[i] = init_WGT_l0[i];\n")
-=======
             f.write("  for(int i=0; i<Tin_C_l0*Tin_H_l0*Tin_W_l0; i++)\t\t\tl0_in[i] = INPUT[i];\n")
             if layers_l[layer] not in ['Skipnode', 'Sumnode', 'InstNorm']:
                 f.write("  for(int i=0; i<Tin_C_l0*Tout_C_l0*Tker_H_l0*Tker_W_l0; i++)\t\tl0_ker[i] = init_WGT_l0[i];\n")
             elif layers_l[layer] == 'InstNorm':
                 f.write("  for(int i=0; i<2*Tin_C_l"+str(layer)+"; i++)\t\tl"+str(layer)+"_ker[i] = init_WGT_l"+str(layer)+"[i];\n")
->>>>>>> upstream/main:tools/TrainLib_Deployer/deployer_utils/deployment_utils.py
         elif layer > 0 and layer < len(layers_l)-1:
             f.write("  // Layer "+str(layer)+"\n")
             if layers_l[layer] == 'DW':
