@@ -17,6 +17,6 @@ else
 fi
 cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME/utils/
 python GM.py
-cp initdefines.h ../
-cp iodata.c ../
-cp iodata.h ../
+cp init-defines.h ../
+cp io_data.c ../
+cp io_data.h ../

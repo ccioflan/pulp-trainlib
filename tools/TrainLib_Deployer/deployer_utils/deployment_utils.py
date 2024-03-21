@@ -268,7 +268,7 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
     f.write('NUM_MATMULS?=24		# Available standard matmuls in the library' + '\n')
     f.write('TRAIN_LIB=./lib\n')
     f.write('TRAIN_LIB_SRCS=$(TRAIN_LIB)/sources\n')
-    f.write('APP_SRCS = main.c net.c # iodata.c \n\n') # TODO: Fix multiple definition of value-defined arrays
+    f.write('APP_SRCS = main.c net.c # io_data.c \n\n') # TODO: Fix multiple definition of value-defined arrays
 
     f.write('APP_CFLAGS += -I. -I$(TRAIN_LIB)/include\n')
     f.write('APP_CFLAGS += -O3 -g3\n')
@@ -397,11 +397,11 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n")
 
     # Write sizes to the header files 
-    f.write("f = open('initdefines.h', 'w')\n")
+    f.write("f = open('init-defines.h', 'w')\n")
 
     # Include guard
-    f.write("f.write('#ifndef INITDEFINES_H"+"\\n')\n")
-    f.write("f.write('#define INITDEFINES_H"+"\\n')\n")
+    f.write("f.write('#ifndef INIT-DEFINES_H"+"\\n')\n")
+    f.write("f.write('#define INIT-DEFINES_H"+"\\n')\n")
 
     for layer in range(len(layers_l)):
         f.write("f.write('// Layer"+str(layer)+"\\n')\n")
@@ -423,14 +423,14 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("f.close()\n\n")
 
     # Write hyperparameters to header
-    f.write("f = open('initdefines.h', 'a')\n")
+    f.write("f = open('init-defines.h', 'a')\n")
     f.write("f.write('\\n// HYPERPARAMETERS\\n')\n")
     f.write("f.write('#define LEARNING_RATE '+str(learning_rate)+'\\n')\n")
     f.write("f.write('#define EPOCHS '+str(epochs)+'\\n')\n")
     f.write("f.write('#define BATCH_SIZE '+str(batch_size)+'\\n')\n")
 
     # Include guard
-    f.write("f.write('#endif /* INITDEFINES_H */"+"\\n')\n")
+    f.write("f.write('#endif /* INIT-DEFINES_H */"+"\\n')\n")
 
 
     f.write("f.close()\n\n")
@@ -575,11 +575,11 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("label = torch.ones_like(output_test).to(device)\n")
 
     # Write init weights to header file
-    f.write("f = open('iodata.h', 'w')\n")
+    f.write("f = open('io_data.h', 'w')\n")
 
     # Include guard
-    f.write("f.write('#ifndef IODATA_H"+"\\n')\n")
-    f.write("f.write('#define IODATA_H"+"\\n')\n")
+    f.write("f.write('#ifndef io_data_H"+"\\n')\n")
+    f.write("f.write('#define io_data_H"+"\\n')\n")
 
     f.write("f.write('// Init weights\\n')\n")
     for layer in range(len(layers_l)):
@@ -609,9 +609,9 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("f.close()\n\n")
 
     # Write init weights to header file
-    f.write("f = open('iodata.c', 'w')\n")
+    f.write("f = open('io_data.c', 'w')\n")
 
-    f.write("f.write('#include \"iodata.h\"\\n')\n")
+    f.write("f.write('#include \"io_data.h\"\\n')\n")
     f.write("f.write('// Init weights\\n')\n")
     for layer in range(len(layers_l)):
         if (layers_l[layer] != 'ReLU' and layers_l[layer] != 'MaxPool' and layers_l[layer] != 'AvgPool'):
@@ -650,7 +650,7 @@ def GenerateGM(proj_folder_path, project_name,
 
     # TODO: Move into hexfile
     # Dump input and output of the network to the header file for the MCU
-    f.write("f = open('iodata.h', 'a')\n")
+    f.write("f = open('io_data.h', 'a')\n")
     f.write("f.write('// Input and Output data\\n')\n")
     f.write("f.write('#define IN_SIZE "+str(in_ch_l[0]*win_l[0]*hin_l[0])+"\\n')\n")
     # Fake input data definition
@@ -676,11 +676,11 @@ def GenerateGM(proj_folder_path, project_name,
         print("[deployment_utils.GenerateGM] Invalid output data size!")
 
     # Include guard
-    f.write("f.write('#endif /* IODATA_H */"+"\\n')\n")
+    f.write("f.write('#endif /* io_data_H */"+"\\n')\n")
 
     f.write("f.close()\n")
 
-    f.write("f = open('iodata.c', 'a')\n")
+    f.write("f = open('io_data.c', 'a')\n")
 
     if data_type_l[0] == 'FP32':
         f.write("f.write('IN_DATA[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
@@ -749,8 +749,8 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("#include \"pulp_train.h\"\n")
     f.write("#include \"net.h\"\n")
     f.write("#include \"stats.h\"\n\n")
-    f.write("#include \"initdefines.h\"\n")
-    f.write("#include \"iodata.h\"\n")
+    f.write("#include \"init-defines.h\"\n")
+    f.write("#include \"io_data.h\"\n")
 
 
 

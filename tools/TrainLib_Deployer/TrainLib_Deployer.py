@@ -149,7 +149,7 @@ data_list = []
 # EXECUTION PROPERTIES
 NUM_CORES       = 8
 L1_SIZE_BYTES   = 60*(2**10)
-USE_DMA = 'NO'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
+USE_DMA = 'DB'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
 # BACKWARD SETTINGS
 SEPARATE_BACKWARD_STEPS = False          # If True, writes separate weight and input gradient in backward step
 # PROFILING OPTIONS
