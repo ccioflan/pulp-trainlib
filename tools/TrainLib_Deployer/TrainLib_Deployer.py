@@ -147,7 +147,7 @@ data_list = []
 # ----- END OF DS-CNN NETWORK GRAPH -----
 
 # EXECUTION PROPERTIES
-NUM_CORES       = 8
+NUM_CORES       = 1
 L1_SIZE_BYTES   = 60*(2**10)
 USE_DMA = 'DB'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
 # BACKWARD SETTINGS
