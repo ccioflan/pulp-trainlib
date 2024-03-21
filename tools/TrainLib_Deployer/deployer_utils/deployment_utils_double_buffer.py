@@ -175,6 +175,7 @@ def GenerateNet(proj_folder_path, project_name,
     elif data_type == 'FP16':
         f.write("PI_L1 fp16 * D1, * d1, * W1, * w1, * D0, * d0, * W0, *w0;\n")
         # f.write("PI_L1 fp16 BUFF[MAX_SIZE];\n")
+        f.write("PI_L1 fp16 * BUFF;\n")
         f.write("PI_L1 struct blob_fp16 d1_blob;\n")
         f.write("PI_L1 struct blob_fp16 w1_blob;\n")
         f.write("PI_L1 struct blob_fp16 d0_blob;\n")
@@ -569,9 +570,9 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("void DNN_init()\n{\n")
     f.write("\n// Assign pointers in L1\n")
     if (data_type == "FP32"):
-        f.write("  BUFF = (float *) pi_l1_malloc(NULL, MAX_SIZE);\n")
+        f.write("  BUFF = (float *) pi_l1_malloc(NULL, MAX_SIZE*sizeof(float));\n")
     elif (data_type == "FP16"):
-        f.write("  BUFF = (fp16 *) pi_l1_malloc(NULL, MAX_SIZE);\n")
+        f.write("  BUFF = (fp16 *) pi_l1_malloc(NULL, MAX_SIZE*sizeof(float));\n")
     f.write("  d0_blob.data = BUFF;\n")
     f.write("  d0_blob.diff = BUFF;\n")
     f.write("  w0_blob.data = BUFF;\n")
@@ -1426,7 +1427,7 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("  print_output();\n")
 
     f.write("  // Free l1 buffer\n")
-    f.write("  pi_l1_free(NULL, BUFF, MAX_SIZE);\n")
+    f.write("  pi_l1_free(NULL, BUFF, MAX_SIZE*sizeof(float));\n")
 
     f.write("}\n")
 

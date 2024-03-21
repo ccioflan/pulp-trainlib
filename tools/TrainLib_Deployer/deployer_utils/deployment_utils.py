@@ -440,7 +440,7 @@ def GenerateGM(proj_folder_path, project_name,
     if (layers_l[0] == 'linear'):
         f.write("inp = torch.div(torch.ones(l0_in_ch), 1e6).to(device)\n")
     elif (layers_l[0] in ['conv2d', 'DW', 'PW', 'Skipnode', 'InstNorm']):
-        f.write("inp = torch.torch.div(torch.rand(batch_size, l0_in_ch, l0_hin, l0_win), 1e6).to(device)\n")
+        f.write("inp = torch.torch.div(torch.ones(batch_size, l0_in_ch, l0_hin, l0_win), 1e6).to(device)\n")
     # Throw error
     else:
         print("[deployment_utils.GenerateGM]: Input layer not valid!\n")
@@ -560,10 +560,10 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("for p in net.parameters():\n")
     f.write("\tprint (p)\n")
     f.write("\tnn.init.normal_(p, mean=0.0, std=1.0)\n")
-    # if (data_list):
-    #     for layer in range(len(layers_l)):
-    #         f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))), requires_grad=True)\n")
-    #         # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
+    if (data_list):
+        for layer in range(len(layers_l)):
+            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))), requires_grad=True)\n")
+            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
     f.write("net.zero_grad()\n\n")
     f.write("for p in net.parameters():\n")
     f.write("\tprint (p)\n")

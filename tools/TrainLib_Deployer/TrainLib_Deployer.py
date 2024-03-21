@@ -115,7 +115,7 @@ loss_fn         = "MSELoss"            # Name of PyTorch's loss function
 layer_list = ['linear']
 # Layer properties
 sumnode_connections = [ 0]
-in_ch_list = [276]                # Linear: size of input vector
+in_ch_list = [172]                # Linear: size of input vector
 out_ch_list = [12]                # Linear: size of input vector
 hk_list = [1]                     # Linear: = 1
 wk_list = [1]                     # Linear: = 1
