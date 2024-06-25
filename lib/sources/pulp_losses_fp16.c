@@ -23,6 +23,28 @@
 #include "pulp_losses_fp16.h"
 
 
+static void softmax_fp16(fp16 *input, size_t input_len) {
+
+  fp16 output[input_len];
+  fp16 sum = 0.0;
+
+  for (size_t i = 0; i < input_len; i++) {
+    output[i] = ((fp16) exp((float) (input[i] + 1e-6)));
+    sum += output[i];
+
+#ifdef VERBOSE
+    printf("Input[%d] is %f\n", i, input[i]);
+    printf("Exponential[%d] is %f\n", i, output[i]);
+#endif
+  }
+
+  for (size_t i = 0; i < input_len; i++) {
+    input[i] = output[i]/sum;
+  }
+
+}
+
+
 void pulp_CrossEntropyLoss_fp16 ( void * loss_args_fp16 )
 {
   struct loss_args_fp16 * args = (struct loss_args_fp16 *) loss_args_fp16;
@@ -30,6 +52,8 @@ void pulp_CrossEntropyLoss_fp16 ( void * loss_args_fp16 )
   fp16 * target = args->target;
   fp16 * wr_loss = args->wr_loss;
   int size = args->output->dim;
+
+  softmax_fp16(outData, size);
 
   fp16 loss = 0.0;
   for(int i=0; i<size; i++){
