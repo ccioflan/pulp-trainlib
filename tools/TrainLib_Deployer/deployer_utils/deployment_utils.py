@@ -277,6 +277,7 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
     f.write('APP_CFLAGS += -DNUM_CORES=$(NUM_CORES)\n')
     f.write('APP_CFLAGS += -DPROF_NET\n')
     f.write('APP_CFLAGS += -mhwloopalign\n')
+    f.write('APP_CFLAGS += -Wno-error\n')
     for layer in range(len(layers_l)):
         f.write('APP_CFLAGS += -DMATMUL_TYPE_FW_L'+str(layer)+'=$'+str('{MATMUL_TYPE_FW_L')+str(layer)+str('}')+'\n')
         f.write('APP_CFLAGS += -DMATMUL_TYPE_WG_L'+str(layer)+'=$'+str('{MATMUL_TYPE_WG_L')+str(layer)+str('}')+'\n')
@@ -372,6 +373,8 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\tdevice = torch.device('cuda')\n")
     f.write("else:\n")
     f.write("\tdevice = torch.device('cpu')\n")  
+
+    # f.write("device = torch.device('cpu')\n")  
 
     # Define hyperparameters
     f.write("# Define hyperparameters\n")
@@ -562,8 +565,16 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\tnn.init.normal_(p, mean=0.0, std=1.0)\n")
     if (data_list):
         for layer in range(len(layers_l)):
-            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))), requires_grad=True)\n")
-            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(numpy.load(../data/l"+str(layer)+"b.npy)))")
+            f.write("np_array_w = numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))\n")
+            # f.write("np_array_b = numpy.load(../data/l"+str(layer)+"b.npy)")
+            if data_type_l[0] == 'FP16':
+                f.write("np_array_w = np_array_w.astype(numpy.float16)\n")
+                # f.write("np_array_b = np_array_b.astype(numpy.float16)")
+            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(np_array_w), requires_grad=True)\n")
+            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(np_array_b))")
+
+
+    f.write("net = net.to(device)\n")
     f.write("net.zero_grad()\n\n")
     f.write("for p in net.parameters():\n")
     f.write("\tprint (p)\n")
@@ -637,14 +648,15 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("# Train the DNN\n")
     f.write("for batch in range(epochs):\n")
     f.write("\toptimizer.zero_grad()\n")
-    f.write("\tout = net(inp)\n")
+    f.write("\tout = torch.nn.functional.softmax(net(inp))\n")
     f.write("\tloss = loss_fn(out, label)\n")
     f.write("\tloss.backward()\n")
     f.write("\toptimizer.step()\n")
     
     # Inference after training
     f.write("\n# Inference once after training\n")
-    f.write("out = net(inp)\n")
+    f.write("out = torch.nn.functional.softmax(net(inp))\n")
+    f.write("print (out)\n")
     f.write("\n")
 
 

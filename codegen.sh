@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export PATH=/usr/pack/gcc-9.2.0-af/linux-x64/bin:$PATH 
+export LD_LIBRARY_PATH=/usr/pack/gcc-9.2.0-af/linux-x64/lib64/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/scratch/wetterhorn/cioflanc/miniconda3/pkgs/mpfr-4.0.2-hb69a4c5_1/lib/
+
 export PROJECTPATH=$1
 export PROJECTNAME=$2
 export MODELPATH=$3

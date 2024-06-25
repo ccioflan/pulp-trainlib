@@ -74,11 +74,11 @@ project_path    = args.project_path
 proj_folder     = project_path + project_name + '/'
 
 # TRAINING PROPERTIES
-epochs          = 1
+epochs          = 10
 batch_size      = 1                   # BATCHING NOT IMPLEMENTED!!
-learning_rate   = 0.5
+learning_rate   = 0.01
 optimizer       = "SGD"                # Name of PyTorch's optimizer
-loss_fn         = "MSELoss"            # Name of PyTorch's loss function
+loss_fn         = "CrossEntropyLoss"            # Name of PyTorch's loss function
 
 # # EXAMPLE
 # # ------- NETWORK GRAPH --------
@@ -149,7 +149,7 @@ data_list = []
 # EXECUTION PROPERTIES
 NUM_CORES       = 1
 L1_SIZE_BYTES   = 60*(2**10)
-USE_DMA = 'DB'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
+USE_DMA = 'NO'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
 # BACKWARD SETTINGS
 SEPARATE_BACKWARD_STEPS = False          # If True, writes separate weight and input gradient in backward step
 # PROFILING OPTIONS
