@@ -41,6 +41,10 @@ struct loss_args {
  * Loss functions
  */
 
+
+void local_softmax(float *input, size_t input_len);
+
+
 /**
  * @brief Cross Entropy Loss function 
  * @param output pointer to the blob structure of the last DNN's layer (loss computation + calculation of the output gradient)

@@ -23,7 +23,7 @@
 #include "pulp_losses_fp32.h"
 
 
-static void softmax(float *input, size_t input_len) {
+void local_softmax(float *input, size_t input_len) {
 
   float output[input_len];
   float sum = 0.0;
@@ -52,8 +52,6 @@ void pulp_CrossEntropyLoss ( void * loss_args )
   float * target = args->target;
   float * wr_loss = args->wr_loss;
   int size = args->output->dim;
-
-  softmax(outData, size);
 
   float loss = 0.0;
   for(int i=0; i<size; i++){

@@ -1636,6 +1636,10 @@ def GenerateNet(proj_folder_path, project_name,
 
     f.write("  for (int epoch=0; epoch<EPOCHS; epoch++)\n  {\n")
     f.write("    forward();\n")
+    if data_type_l[output_index] == 'FP32':
+        f.write("    local_softmax(layer0_out.data, layer0_out.dim);\n")
+    if data_type_l[output_index] == 'FP16':
+        f.write("    local_softmax_fp16(layer0_out.data, layer0_out.dim);\n")
     f.write("    compute_loss();\n")
     f.write("    backward();\n")
     f.write("    update_weights();\n")
@@ -1649,6 +1653,10 @@ def GenerateNet(proj_folder_path, project_name,
 
     f.write("  // Check and print updated output\n")
     f.write("  forward();\n")
+    if data_type_l[output_index] == 'FP32':
+        f.write("  local_softmax(layer0_out.data, layer0_out.dim);\n")
+    if data_type_l[output_index] == 'FP16':
+        f.write("  local_softmax_fp16(layer0_out.data, layer0_out.dim);\n")
     f.write("  printf(\"Checking updated output..\\n\");\n")
     f.write("  check_post_training_output();\n")
     f.write("  print_output();\n")

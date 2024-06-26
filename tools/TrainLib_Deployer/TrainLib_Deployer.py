@@ -139,7 +139,7 @@ opt_mm_wg_list  = [0 ]
 opt_mm_ig_list  = [0 ]
 
 # Data type list for layer-by-layer deployment (mixed precision)
-data_type_list   = ['FP32']
+data_type_list   = ['FP16']
 # Data layout list (CHW or HWC) 
 data_layout_list = ['CHW']   # TO DO
 # Pretrained parameters
