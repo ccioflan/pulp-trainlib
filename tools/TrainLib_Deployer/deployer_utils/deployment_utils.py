@@ -1,5 +1,5 @@
 '''
-Copyright (C) 2021-2022 ETH Zurich and University of Bologna
+Copyright (C) 2021-2024 ETH Zurich and University of Bologna
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@ limitations under the License.
 '''
 
 '''
-Authors: Davide Nadalini, Giacomo Saporetti
+Authors: Davide Nadalini, Giacomo Saporetti, Cristian Cioflan, Axel Vanoni
 '''
 
 import os
@@ -32,13 +32,13 @@ import deployer_utils.net_templates as ntemp
 DNN Size Checker backend functions
 """
 
-def compute_wgt_act_memocc_bytes(layer_number, layer_type, chin, chout, hk, wk, hin, win, h_pad, w_pad, h_str, w_str, DATA_TYPE, is_last_layer):
+def compute_wgt_act_memocc_bytes(layer_number, layer_type, chin, chout, hk, wk, hin, win, h_pad, w_pad, h_str, w_str, DATA_TYPE, update_layer, compute_ingrad, is_last_layer):
 
     memocc_bytes = 0
 
     # First layer does not have in grad
     in_grad_present = 1
-    if layer_number == 0:
+    if layer_number == 0 or compute_ingrad == 0:
         in_grad_present = 0
     
     # Last layer occupies output memory (other activations overlap)
@@ -48,7 +48,7 @@ def compute_wgt_act_memocc_bytes(layer_number, layer_type, chin, chout, hk, wk, 
 
     # If the layer is an activation, no weights!
     wgt_present = 1
-    if layer_type in ['ReLu', 'Skipnode', 'Sumnode']:
+    if layer_type in ['ReLu', 'Skipnode', 'Sumnode'] or update_layer == 0:
         wgt_present = 0
 
     byte_size = 4
@@ -69,7 +69,8 @@ def compute_wgt_act_memocc_bytes(layer_number, layer_type, chin, chout, hk, wk, 
     memocc_bytes += chin * hin * win * byte_size
     # Weights
     if  layer_type == 'InstNorm':
-        memocc_bytes += 2 * chin * byte_size
+        memocc_bytes += 2 * chin * byte_size    # beta, gamma
+        memocc_bytes += 3 * chin * byte_size    # running mean, var, stdev
     else:    
         memocc_bytes += chin * chout * hk * wk * byte_size * wgt_present
     # Out act
@@ -87,37 +88,50 @@ def compute_wgt_act_memocc_bytes(layer_number, layer_type, chin, chout, hk, wk, 
     return memocc_bytes
 
 
-def compute_im2col_memocc_bytes(layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l, h_pad_l, w_pad_l, h_str_l, w_str_l, data_type_l):
+def compute_im2col_memocc_bytes(layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l, h_pad_l, w_pad_l, h_str_l, w_str_l, data_type_l, update_layer_l, CONV2D_USE_IM2COL):
 
     memocc_bytes = 0
+
+    # Find last layer to be updated
+    last_updated_idx = len(layers_l) - 1
+    for layer in range(len(layers_l)):
+        if update_layer_l[layer] == 1:
+            last_updated_idx = layer
+            break
 
     max_im2col_size = 0
     max_im2col_index = 0
     for layer in range(len(layers_l)):
-        # Check layer data type
-        byte_size = 4
-        if data_type_l[layer] == 'FP32':
+        is_first_layer = 0
+        if layer == 0:
+            is_first_layer = 1
+        if layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == True:
+            # Check layer data type
             byte_size = 4
-        elif data_type_l[layer] == 'FP16':
-            byte_size = 2
-        else:
-            print("[deployment_utils.compute_im2col_memocc_bytes]: Invalid data type @Layer{}!!".format(layer))
-            exit()      
-        # Output H and W
-        hout = math.floor( (hin_l[layer]-hk_l[layer]+2*h_pad_l[layer]+h_str_l[layer])/h_str_l[layer] )
-        wout = math.floor( (win_l[layer]-wk_l[layer]+2*w_pad_l[layer]+w_str_l[layer])/w_str_l[layer] )
-        # Find max im2col size
-        if layers_l[layer] == 'conv2d': # or layers_l[layer] == 'DW':
-            im2col_size = 0
-            size_FW = hk_l[layer] * wk_l[layer] * in_ch_l[layer] * hout * wout * byte_size
-            size_BW = out_ch_l[layer] * hk_l[layer] * wk_l[layer] * hin_l[layer] * win_l[layer] * byte_size
-            if size_FW > size_BW:
-                im2col_size = size_FW
+            if data_type_l[layer] == 'FP32':
+                byte_size = 4
+            elif data_type_l[layer] == 'FP16':
+                byte_size = 2
             else:
-                im2col_size = size_BW
-            if im2col_size > max_im2col_size:
-                max_im2col_size = im2col_size
-                max_im2col_index = layer
+                print("[deployment_utils.compute_im2col_memocc_bytes]: Invalid data type @Layer{}!!".format(layer))
+                exit()      
+            # Output H and W
+            hout = math.floor( (hin_l[layer]-hk_l[layer]+2*h_pad_l[layer]+h_str_l[layer])/h_str_l[layer] )
+            wout = math.floor( (win_l[layer]-wk_l[layer]+2*w_pad_l[layer]+w_str_l[layer])/w_str_l[layer] )
+            # Find max im2col size
+            if layers_l[layer] == 'conv2d': # or layers_l[layer] == 'DW':
+                im2col_size = 0
+                size_FW = hk_l[layer] * wk_l[layer] * in_ch_l[layer] * hout * wout * byte_size
+                size_BW = 0 
+                if is_first_layer == 0 and layer > last_updated_idx:
+                    size_BW = out_ch_l[layer] * hk_l[layer] * wk_l[layer] * hin_l[layer] * win_l[layer] * byte_size
+                if size_FW > size_BW:
+                    im2col_size = size_FW
+                else:
+                    im2col_size = size_BW
+                if im2col_size > max_im2col_size:
+                    max_im2col_size = im2col_size
+                    max_im2col_index = layer
     
     #print("Max im2col size (@layer {}): {}".format(max_im2col_index, max_im2col_size))
     memocc_bytes += max_im2col_size
@@ -170,9 +184,16 @@ def compute_cast_buffer_memocc_bytes (layers_l, chin_l, chout_l, hk_l, wk_l, hin
     return memocc_bytes, max_act_index, act_inout
 
 
-def compute_bt_memocc_bytes(layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l, data_type_l):
+def compute_bt_memocc_bytes(layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l, data_type_l, update_layer_l, CONV2D_USE_IM2COL):
 
     memocc_bytes = 0
+
+    # Find last layer to be updated
+    last_updated_idx = len(layers_l) - 1
+    for layer in range(len(layers_l)):
+        if update_layer_l[layer] == 1:
+            last_updated_idx = layer
+            break
 
     max_bt_size = 0
     max_bt_index = 0
@@ -189,7 +210,7 @@ def compute_bt_memocc_bytes(layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_
             print("[deployment_utils.compute_bt_memocc_bytes]: Invalid data type @Layer{}!!".format(layer))
             exit()
         # Find max blocktransp size
-        if (layers_l[layer] == 'conv2d' or layers_l[layer] == 'PW') and layer > 0:
+        if (((layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == True) or layers_l[layer] == 'PW') and (layer > last_updated_idx)):
             bt_size = hk_l[layer] * wk_l[layer] * in_ch_l[layer] * out_ch_l[layer] * byte_size
             if bt_size > max_bt_size:
                 max_bt_size = bt_size
@@ -222,12 +243,9 @@ def InitProject(proj_folder_path):
     proj_folder = proj_folder_path
     utils_folder = proj_folder + 'utils/'
     trainlib_dest_folder = proj_folder + 'lib/' 
-    data_folder = proj_folder+'data/'
     
-    if not os.path.exists(proj_folder):
-        os.makedirs(proj_folder)
-    if not os.path.exists(utils_folder):
-        os.makedirs(utils_folder)
+    os.makedirs(proj_folder, exist_ok = True)
+    os.makedirs(utils_folder, exist_ok = True)
 
     shutil.copy2('./deployer_utils/srcfiles/main.c', proj_folder)
     shutil.copy2('./deployer_utils/srcfiles/stats.h', proj_folder)
@@ -265,10 +283,10 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
         f.write('MATMUL_TYPE_IG_L'+str(layer)+'?='+str(opt_mm_ig_list[layer])+'         # Selects which optimized matmul to be used in IN GRAD (see mm_manager_list.txt or "MM_manager()" body to verify which one is called)' + '\n')
     f.write('# End of user settings\n\n')
 
-    f.write('NUM_MATMULS?=24		# Available standard matmuls in the library' + '\n')
+    f.write('NUM_MATMULS?=24        # Available standard matmuls in the library' + '\n')
     f.write('TRAIN_LIB=./lib\n')
     f.write('TRAIN_LIB_SRCS=$(TRAIN_LIB)/sources\n')
-    f.write('APP_SRCS = main.c net.c # io_data.c \n\n') # TODO: Fix multiple definition of value-defined arrays
+    f.write('APP_SRCS = main.c net.c\n\n')
 
     f.write('APP_CFLAGS += -I. -I$(TRAIN_LIB)/include\n')
     f.write('APP_CFLAGS += -O3 -g3\n')
@@ -277,7 +295,6 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
     f.write('APP_CFLAGS += -DNUM_CORES=$(NUM_CORES)\n')
     f.write('APP_CFLAGS += -DPROF_NET\n')
     f.write('APP_CFLAGS += -mhwloopalign\n')
-    f.write('APP_CFLAGS += -Wno-error\n')
     for layer in range(len(layers_l)):
         f.write('APP_CFLAGS += -DMATMUL_TYPE_FW_L'+str(layer)+'=$'+str('{MATMUL_TYPE_FW_L')+str(layer)+str('}')+'\n')
         f.write('APP_CFLAGS += -DMATMUL_TYPE_WG_L'+str(layer)+'=$'+str('{MATMUL_TYPE_WG_L')+str(layer)+str('}')+'\n')
@@ -301,6 +318,7 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_dw_fp32.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_pw_fp32.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv2d_fp32.c\n')
+        f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_naive_fp32.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_im2col_fp32.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_linear_fp32.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_losses_fp32.c\n')
@@ -315,6 +333,7 @@ def GenerateMakefile(proj_folder_path, project_name, layers_l, NUM_CORES, data_t
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_dw_fp16.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_pw_fp16.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv2d_fp16.c\n')
+        f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_conv_naive_fp16.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_im2col_fp16.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_linear_fp16.c\n')
         f.write('APP_SRCS += $(TRAIN_LIB_SRCS)/pulp_losses_fp16.c\n')
@@ -345,7 +364,7 @@ def GenerateGM(proj_folder_path, project_name,
                 layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l,
                 h_str_l, w_str_l, h_pad_l, w_pad_l,
                 epochs, batch_size, learning_rate, optimizer, loss_fn,
-                data_type_l, sumnode_connections, USE_DMA, data_list):
+                data_type_l, data_list, update_layer_l, sumnode_connections, USE_DMA):
 
     # Check if GPU is available, else keep fake FP16
     cuda_is_on = torch.cuda.is_available()
@@ -374,8 +393,6 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("else:\n")
     f.write("\tdevice = torch.device('cpu')\n")  
 
-    # f.write("device = torch.device('cpu')\n")  
-
     # Define hyperparameters
     f.write("# Define hyperparameters\n")
     f.write("learning_rate = "+str(learning_rate)+"\n")
@@ -401,11 +418,6 @@ def GenerateGM(proj_folder_path, project_name,
 
     # Write sizes to the header files 
     f.write("f = open('init-defines.h', 'w')\n")
-
-    # Include guard
-    f.write("f.write('#ifndef INIT-DEFINES_H"+"\\n')\n")
-    f.write("f.write('#define INIT-DEFINES_H"+"\\n')\n")
-
     for layer in range(len(layers_l)):
         f.write("f.write('// Layer"+str(layer)+"\\n')\n")
         f.write("f.write('#define Tin_C_l"+str(layer)+" '+str(l"+str(layer)+"_in_ch)+'\\n')\n")
@@ -431,11 +443,6 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("f.write('#define LEARNING_RATE '+str(learning_rate)+'\\n')\n")
     f.write("f.write('#define EPOCHS '+str(epochs)+'\\n')\n")
     f.write("f.write('#define BATCH_SIZE '+str(batch_size)+'\\n')\n")
-
-    # Include guard
-    f.write("f.write('#endif /* INIT-DEFINES_H */"+"\\n')\n")
-
-
     f.write("f.close()\n\n")
 
     # Create input data and label
@@ -443,7 +450,7 @@ def GenerateGM(proj_folder_path, project_name,
     if (layers_l[0] == 'linear'):
         f.write("inp = torch.div(torch.ones(l0_in_ch), 1e6).to(device)\n")
     elif (layers_l[0] in ['conv2d', 'DW', 'PW', 'Skipnode', 'InstNorm']):
-        f.write("inp = torch.torch.div(torch.ones(batch_size, l0_in_ch, l0_hin, l0_win), 1e6).to(device)\n")
+        f.write("inp = torch.torch.div(torch.rand(batch_size, l0_in_ch, l0_hin, l0_win), 1e6).to(device)\n")
     # Throw error
     else:
         print("[deployment_utils.GenerateGM]: Input layer not valid!\n")
@@ -540,6 +547,7 @@ def GenerateGM(proj_folder_path, project_name,
         #Skipconn
         elif sumnode_connections[layer] != -1 and layers_l[layer] != 'Sumnode':
             f.write(f"\n\t\t{variable} = self.l{layer}(x)")
+            f.write(f"\n\t\tx = {variable}")
         elif layers_l[layer] == "Sumnode": 
             f.write(f"\n\t\tx = y{layer} + x\t# Sumnode") 
         # Last layer
@@ -561,24 +569,39 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n# Initialize network\n")
     f.write("net = DNN().to(device)\n")
     f.write("for p in net.parameters():\n")
-    f.write("\tprint (p)\n")
     f.write("\tnn.init.normal_(p, mean=0.0, std=1.0)\n")
     if (data_list):
+        f.write("from pathlib import Path\n")
+        f.write("basedir = Path(__file__).resolve().parent.parent\n")
         for layer in range(len(layers_l)):
-            f.write("np_array_w = numpy.transpose(numpy.load('../data/l"+str(layer)+"w.npy'))\n")
-            # f.write("np_array_b = numpy.load(../data/l"+str(layer)+"b.npy)")
-            if data_type_l[0] == 'FP16':
-                f.write("np_array_w = np_array_w.astype(numpy.float16)\n")
-                # f.write("np_array_b = np_array_b.astype(numpy.float16)")
-            f.write("net.l"+str(layer)+".weight = torch.nn.Parameter(torch.from_numpy(np_array_w), requires_grad=True)\n")
-            # f.write("net.l["+str(layer)+"].bias = torch.nn.Parameter(torch.from_numpy(np_array_b))")
+            if data_type_l[layer] == 'FP16':
+                to = ".to(device).half()"
+            else:
+                to = ".to(device)"
+            f.write(f"net.l{layer}.weight = torch.nn.Parameter(torch.from_numpy(numpy.load(basedir / 'data/l{layer}w.npy')){to}, requires_grad=True)\n")
+            # TODO: uncomment once biases are implemented in trainlib
+            # f.write(f"net.l{layer}.bias = torch.nn.Parameter(torch.from_numpy(numpy.load(basedir / 'data/l{layer}b.npy')){to}, requires_grad=True)\n")
 
-
-    f.write("net = net.to(device)\n")
     f.write("net.zero_grad()\n\n")
-    f.write("for p in net.parameters():\n")
-    f.write("\tprint (p)\n")
 
+    # Freeze layers excluded from sparse update
+    # Find last layer to be updated
+    last_updated_idx = len(layers_l) - 1
+    for layer in range(len(layers_l)):
+        if update_layer_l[layer] == 1:
+            last_updated_idx = layer
+            break
+    write_sparse_update = False
+    sparse_comment_written = False
+    for layer in range(len(layers_l)):
+        if update_layer_l[layer] == 0:
+            write_sparse_update = True
+        if sparse_comment_written == False:
+            f.write("# Freeze weights for sparse update\n")
+            sparse_comment_written = True
+        if write_sparse_update and update_layer_l[layer] == 0:
+            f.write("net.l"+str(layer)+".weight.requires_grad = False\n")
+    f.write("\n")
 
     # Write all-ones sample label
     f.write("\n# All-ones fake label \n")
@@ -587,18 +610,13 @@ def GenerateGM(proj_folder_path, project_name,
 
     # Write init weights to header file
     f.write("f = open('io_data.h', 'w')\n")
-
-    # Include guard
-    f.write("f.write('#ifndef io_data_H"+"\\n')\n")
-    f.write("f.write('#define io_data_H"+"\\n')\n")
-
     f.write("f.write('// Init weights\\n')\n")
     for layer in range(len(layers_l)):
         if (layers_l[layer] not in ['ReLU', 'MaxPool',  'AvgPool', 'Skipnode', 'Sumnode']):
             dump = f"+dump.tensor_to_string(net.l{layer}.weight.data)+"
-            if layers_l[layer] != 'InstNorm':
+            if layers_l[layer] != 'InstNorm':   # Generic layer's weights
                 f.write("f.write('#define WGT_SIZE_L"+str(layer)+" '+str(l"+str(layer)+"_in_ch*l"+str(layer)+"_out_ch*l"+str(layer)+"_hk*l"+str(layer)+"_wk)+'\\n')\n")
-            else:
+            else:                               # InstanceNorm weights
                 f.write("f.write(f'#define WGT_SIZE_L" + f"{layer}" + "  2*{" + f"l{layer}_in_ch" + "}\\n')\n")
                 dump = f"+dump.tensor_to_string(net.l{layer}.weight.data)+dump.tensor_to_string(net.l{layer}.bias.data)+"
             if data_type_l[layer] == 'FP32':
@@ -619,22 +637,6 @@ def GenerateGM(proj_folder_path, project_name,
                 exit()
     f.write("f.close()\n\n")
 
-    # Write init weights to header file
-    f.write("f = open('io_data.c', 'w')\n")
-
-    f.write("f.write('#include \"io_data.h\"\\n')\n")
-    f.write("f.write('// Init weights\\n')\n")
-    for layer in range(len(layers_l)):
-        if (layers_l[layer] != 'ReLU' and layers_l[layer] != 'MaxPool' and layers_l[layer] != 'AvgPool'):
-            if data_type_l[layer] == 'FP32':
-                f.write("f.write('init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
-            elif data_type_l[layer] == 'FP16':
-                f.write("f.write('init_WGT_l"+str(layer)+"[WGT_SIZE_L"+str(layer)+"] = {'+dump.tensor_to_string(net.l"+str(layer)+".weight.data)+'};\\n')\n")
-            else:
-                print("[deployment_utils.GenerateGM] Error in data type definition! (weight init)")
-                exit()
-    f.write("f.close()\n\n")
-
     # Define optimizer
     if optimizer == 'SGD':
         f.write("optimizer = optim."+str(optimizer)+"(net.parameters(), lr=learning_rate, momentum=0)\n")
@@ -645,22 +647,22 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("\n")
 
     # Perform training
+    f.write("train_loss_list = []\n")
     f.write("# Train the DNN\n")
     f.write("for batch in range(epochs):\n")
     f.write("\toptimizer.zero_grad()\n")
-    f.write("\tout = torch.nn.functional.softmax(net(inp))\n")
+    f.write("\tout = net(inp)\n")
     f.write("\tloss = loss_fn(out, label)\n")
+    f.write("\ttrain_loss_list.append(loss)\n")
     f.write("\tloss.backward()\n")
     f.write("\toptimizer.step()\n")
+    f.write("\ntrain_loss = torch.tensor(train_loss_list)\n")
     
     # Inference after training
     f.write("\n# Inference once after training\n")
-    f.write("out = torch.nn.functional.softmax(net(inp))\n")
-    f.write("print (out)\n")
+    f.write("out = net(inp)\n")
     f.write("\n")
 
-
-    # TODO: Move into hexfile
     # Dump input and output of the network to the header file for the MCU
     f.write("f = open('io_data.h', 'a')\n")
     f.write("f.write('// Input and Output data\\n')\n")
@@ -681,35 +683,13 @@ def GenerateGM(proj_folder_path, project_name,
     if data_type_l[-1] == 'FP32':
         f.write("f.write('PI_L2 float REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
         f.write(f"f.write('PI_{memory_loc} float LABEL[OUT_SIZE] = "+"{'+dump.tensor_to_string(label)+'};\\n')\n")
+        f.write("f.write('PI_L2 float TRAIN_LOSS['+str(epochs)+'] = {'+dump.tensor_to_string(train_loss)+'};\\n')\n")
     elif data_type_l[-1] == 'FP16':
         f.write("f.write('PI_L2 fp16 REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
-        f.write(f"f.write('PI_{memory_loc} fp16 LABEL[OUT_SIZE] = "+"{'+dump.tensor_to_string(label)+'};\\n')\n")    
+        f.write(f"f.write('PI_{memory_loc} fp16 LABEL[OUT_SIZE] = "+"{'+dump.tensor_to_string(label)+'};\\n')\n") 
+        f.write("f.write('PI_L2 fp16 TRAIN_LOSS['+str(epochs)+'] = {'+dump.tensor_to_string(train_loss)+'};\\n')\n")   
     else:
         print("[deployment_utils.GenerateGM] Invalid output data size!")
-
-    # Include guard
-    f.write("f.write('#endif /* io_data_H */"+"\\n')\n")
-
-    f.write("f.close()\n")
-
-    f.write("f = open('io_data.c', 'a')\n")
-
-    if data_type_l[0] == 'FP32':
-        f.write("f.write('IN_DATA[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
-    elif data_type_l[0] == 'FP16':
-        f.write("f.write('IN_DATA[IN_SIZE] = {'+dump.tensor_to_string(inp)+'};\\n')\n")
-    else:
-        print("[deployment_utils.GenerateGM] Invalid input data size!")
-    # Fake output data and label definition
-    if data_type_l[-1] == 'FP32':
-        f.write("f.write('REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
-        f.write("f.write('LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")
-    elif data_type_l[-1] == 'FP16':
-        f.write("f.write('REFERENCE_OUTPUT[OUT_SIZE] = {'+dump.tensor_to_string(out)+'};\\n')\n")
-        f.write("f.write('LABEL[OUT_SIZE] = {'+dump.tensor_to_string(label)+'};\\n')\n")    
-    else:
-        print("[deployment_utils.GenerateGM] Invalid output data size!")
-
     f.write("f.close()\n")
 
     f.close()
@@ -725,8 +705,8 @@ def GenerateNet(proj_folder_path, project_name,
                 layers_l, in_ch_l, out_ch_l, hk_l, wk_l, hin_l, win_l,
                 h_str_l, w_str_l, h_pad_l, w_pad_l,
                 epochs, batch_size, learning_rate, optimizer, loss_fn,
-                data_type_l, sumnode_connections,
-                PROFILE_SINGLE_LAYERS, SEPARATE_BACKWARD_STEPS):
+                data_type_l, update_layer_l, sumnode_connections,
+                PROFILE_SINGLE_LAYERS, SEPARATE_BACKWARD_STEPS, CONV2D_USE_IM2COL, PRINT_TRAIN_LOSS):
 
     # Generate net.h
     f = open(proj_folder_path+'net.h', 'w')
@@ -892,33 +872,41 @@ def GenerateNet(proj_folder_path, project_name,
 
     f.write("\n// Define kernel grad tensors\n")
     for layer in range(len(layers_l)):
-        # Define FP32 tensors
-        if data_type_l[layer] == 'FP32':
-            if layers_l[layer] == 'MaxPool' or layers_l[layer] == 'AvgPool':
-                f.write("PI_L1 float l"+str(layer)+"_ker_diff[1];\n")
-            elif layers_l[layer] == 'Skipnode' or layers_l[layer] == 'Sumnode':
-                pass
-            elif layers_l[layer] == 'InstNorm':
-                f.write("PI_L1 float l"+str(layer)+f"_ker_diff[2*Tin_C_l{layer}];\n")
-            else:    
-                f.write("PI_L1 float l"+str(layer)+"_ker_diff[Tin_C_l"+str(layer)+" * Tout_C_l"+str(layer)+" * Tker_H_l"+str(layer)+" * Tker_W_l"+str(layer)+"];\n")
-        # Define FP16 tensors
-        elif data_type_l[layer] == 'FP16':
-            if layers_l[layer] == 'MaxPool' or layers_l[layer] == 'AvgPool':
-                f.write("PI_L1 fp16 l"+str(layer)+"_ker_diff[1];\n")
-            elif layers_l[layer] == 'Skipnode' or layers_l[layer] == 'Sumnode':
-                pass
-            elif layers_l[layer] == 'InstNorm':
-                f.write("PI_L1 fp16 l"+str(layer)+f"_ker_diff[2*Tin_C_l{layer}];\n")
-            else:    
-                f.write("PI_L1 fp16 l"+str(layer)+"_ker_diff[Tin_C_l"+str(layer)+" * Tout_C_l"+str(layer)+" * Tker_H_l"+str(layer)+" * Tker_W_l"+str(layer)+"];\n")
-        # Data type error
+        # Define tensor only if layer is updated
+        if update_layer_l[layer] == 1:
+            # Define FP32 tensors
+            if data_type_l[layer] == 'FP32':
+                if layers_l[layer] == 'MaxPool' or layers_l[layer] == 'AvgPool':
+                    f.write("PI_L1 float l"+str(layer)+"_ker_diff[1];\n")
+                elif layers_l[layer] == 'Skipnode' or layers_l[layer] == 'Sumnode':
+                    pass
+                elif layers_l[layer] == 'InstNorm':
+                    f.write("PI_L1 float l"+str(layer)+f"_ker_diff[2*Tin_C_l{layer}];\n")
+                else:    
+                    f.write("PI_L1 float l"+str(layer)+"_ker_diff[Tin_C_l"+str(layer)+" * Tout_C_l"+str(layer)+" * Tker_H_l"+str(layer)+" * Tker_W_l"+str(layer)+"];\n")
+            # Define FP16 tensors
+            elif data_type_l[layer] == 'FP16':
+                if layers_l[layer] == 'MaxPool' or layers_l[layer] == 'AvgPool':
+                    f.write("PI_L1 fp16 l"+str(layer)+"_ker_diff[1];\n")
+                elif layers_l[layer] == 'Skipnode' or layers_l[layer] == 'Sumnode':
+                    pass
+                elif layers_l[layer] == 'InstNorm':
+                    f.write("PI_L1 fp16 l"+str(layer)+f"_ker_diff[2*Tin_C_l{layer}];\n")
+                else:    
+                    f.write("PI_L1 fp16 l"+str(layer)+"_ker_diff[Tin_C_l"+str(layer)+" * Tout_C_l"+str(layer)+" * Tker_H_l"+str(layer)+" * Tker_W_l"+str(layer)+"];\n")
+            # Data type error
+            else:
+                print("[deployment_utils.GenerateNet] Invalid data type for kernel grad definition @Layer{}!".format(layer))
+                exit()
+        elif update_layer_l[layer] == 0:
+            pass
         else:
-            print("[deployment_utils.GenerateNet] Invalid data type for kernel grad definition @Layer{}!".format(layer))
-            exit()
+            print("[deployment_utils.GenerateNet] Invalid sparse update variable for layer {}!!".format(layer))
+
 
     f.write("\n// Define I/O tensors\n")
 
+    # OPTIMIZE THIS TO SAVE MORE MEMORY WITH SPARSE UPDATE!!
     previous_was_skip = False 
     for layer in range(len(layers_l)):
         # Define FP32 tensors
@@ -941,6 +929,15 @@ def GenerateNet(proj_folder_path, project_name,
             previous_was_skip = True
         else:
             previous_was_skip = False
+
+
+    # Identify last updated layer
+    last_updated_idx = len(layers_l) - 1
+    for layer in range(len(layers_l)):
+        if update_layer_l[layer] == 1:
+            last_updated_idx = layer
+            break
+
     # Write IM2COL buffers
     im2col_flag = False
     im2col_type = 'FW'  # 'FW' or 'BW'
@@ -949,7 +946,7 @@ def GenerateNet(proj_folder_path, project_name,
     im2col_byte_length = 0
     im2col_max_data_type = 'FP32'
     for layer in range(len(layers_l)):
-        if layers_l[layer] == 'conv2d': # or layers_l[layer] == 'DW':
+        if layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == True: # or layers_l[layer] == 'DW':
             if data_type_l[layer] == 'FP32':
                 im2col_byte_length = 4
             elif data_type_l[layer] == 'FP16':
@@ -957,7 +954,9 @@ def GenerateNet(proj_folder_path, project_name,
             im2col_flag = True
             i2c_mem = 0
             i2c_FW = in_ch_l[layer] * hk_l[layer] * wk_l[layer] * math.floor((hin_l[layer]-hk_l[layer]+2*h_pad_l[layer]+h_str_l[layer])/h_str_l[layer]) * math.floor((win_l[layer]-wk_l[layer]+2*w_pad_l[layer]+w_str_l[layer])/w_str_l[layer]) * im2col_byte_length
-            i2c_BW = out_ch_l[layer] * hk_l[layer] * wk_l[layer] * hin_l[layer] * win_l[layer] * im2col_byte_length
+            i2c_BW = 0
+            if layer > 0 and layer > last_updated_idx:
+                i2c_BW = out_ch_l[layer] * hk_l[layer] * wk_l[layer] * hin_l[layer] * win_l[layer] * im2col_byte_length
             if i2c_FW > i2c_BW:
                 i2c_mem = i2c_FW
                 im2col_type = 'FW'
@@ -987,6 +986,13 @@ def GenerateNet(proj_folder_path, project_name,
             else:
                 print("[deployment_utils.GenerateNet] Invalid data type for im2col!!")
                 exit()
+    # No im2col buffer
+    allocate_no_im2col = False
+    for layer in range(len(layers_l)):
+        if layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == False: 
+            allocate_no_im2col = True
+    if allocate_no_im2col == True:
+        f.write("PI_L1 float im2col_buffer[1];\n")
 
     # Write in grad transposition / blocktranspose buffer
     bt_flag = False
@@ -997,10 +1003,10 @@ def GenerateNet(proj_folder_path, project_name,
     for layer in range(len(layers_l)):
         # Check layer data layout
         data_layout = 'CHW'     # Change to input list of data layouts
-        if (layers_l[layer] == 'conv2d' or layers_l[layer] == 'PW') and layer == 0:
+        if ((layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == True) or layers_l[layer] == 'PW') and layer == last_updated_idx: #layer == 0:
             bt_flag = True
             bt_layer_index = 0
-        elif (layers_l[layer] == 'conv2d' or layers_l[layer] == 'PW') and layer > 0:
+        elif ((layers_l[layer] == 'conv2d' and CONV2D_USE_IM2COL == True) or layers_l[layer] == 'PW') and layer > last_updated_idx: #layer > 0:
             bt_flag = True
             bt_mem = in_ch_l[layer] * hk_l[layer] * wk_l[layer] * out_ch_l[layer]
             if bt_mem > bt_max_memocc:
@@ -1041,13 +1047,18 @@ def GenerateNet(proj_folder_path, project_name,
         else:
             print("[deployment_utils.GenerateNet] Invalid data type for pw transp buffer definition!\n")
             exit()
+    # No blocktranspose buffer
+    if (bt_flag == False):
+        print("No blockstranspose buffer detected\n")
+        f.write("PI_L1 float bt_buffer[1];\n")
+
 
 
     # Define tensors to backpropagate the output error
     f.write("\n// Define error propagation tensors\n")
     previous_was_skip = False
     for layer in range(len(layers_l)):
-        if not previous_was_skip:
+        if (not previous_was_skip) and (layer >= last_updated_idx):
             # Define FP32 tensors
             if data_type_l[layer] == 'FP32':
                 if layer > 0:
@@ -1068,7 +1079,21 @@ def GenerateNet(proj_folder_path, project_name,
             previous_was_skip = True
         else:
             previous_was_skip = False   
-      
+
+
+    # Normalization layer running stats
+    f.write("\n// Define running parameters for normalization layers\n")
+    for layer in range(len(layers_l)):
+        if layers_l[layer] == 'InstNorm':
+            if data_type_l[layer] == 'FP32':
+                f.write("PI_L1 float l"+str(layer)+"_running_mean[Tin_C_l"+str(layer)+"];\n")
+                f.write("PI_L1 float l"+str(layer)+"_running_var[Tin_C_l"+str(layer)+"];\n")
+                f.write("PI_L1 float l"+str(layer)+"_running_stdev[Tin_C_l"+str(layer)+"];\n")
+            elif data_type_l[layer] == 'FP16':
+                f.write("PI_L1 fp16 l"+str(layer)+"_running_mean[Tin_C_l"+str(layer)+"];\n")
+                f.write("PI_L1 fp16 l"+str(layer)+"_running_var[Tin_C_l"+str(layer)+"];\n")
+                f.write("PI_L1 fp16 l"+str(layer)+"_running_stdev[Tin_C_l"+str(layer)+"];\n")
+
 
     # Define buffer for mixed precision propagation
     previous_type = data_type_l[0]
@@ -1153,6 +1178,10 @@ def GenerateNet(proj_folder_path, project_name,
                 f.write("  //   Resconn layer (no parameters)\n")
             elif layers_l[layer] == 'InstNorm':
                 f.write("  for(int i=0; i<2*Tin_C_l"+str(layer)+"; i++)\t\tl"+str(layer)+"_ker[i] = init_WGT_l"+str(layer)+"[i];\n")
+                f.write("  for(int i=0; i<Tin_C_l"+str(layer)+"; i++) {\n")
+                f.write("  \t\tl"+str(layer)+"_running_mean[i] = 0;")
+                f.write("  \t\tl"+str(layer)+"_running_var[i] = 1;")
+                f.write("  \t\tl"+str(layer)+"_running_stdev[i] = 1;\n  }")
             else:
                 f.write("  for(int i=0; i<Tin_C_l"+str(layer)+"*Tout_C_l"+str(layer)+"*Tker_H_l"+str(layer)+"*Tker_W_l"+str(layer)+"; i++)\t\tl"+str(layer)+"_ker[i] = init_WGT_l"+str(layer)+"[i];\n")
         elif layer == len(layers_l)-1:
@@ -1164,6 +1193,8 @@ def GenerateNet(proj_folder_path, project_name,
         else:
             print("[deployment_utils.GenerateNet]: Error in PULP layer initialization!")
             exit()
+
+
 
     # Mixed precision check
     C_data_type = 'float'
@@ -1180,15 +1211,47 @@ def GenerateNet(proj_folder_path, project_name,
             print("[deployment_utils.GenerateNet]: Invalid data type for structure assignment @layer{}!".format(layer))
             exit()
         f.write(f"\n\n//Connecting {layers_l[layer]}\n")
-        # DNN is 1 layer long
-        if len(layers_l) == 1:
+
+        # INPUT BLOB
+        if len(layers_l) == 1:                          # DNN is 1 layer long
             f.write("  layer"+str(layer)+"_in.data = l0_in;\n")
             f.write("  layer"+str(layer)+"_in.dim = Tin_C_l0*Tin_H_l0*Tin_W_l0;\n")
             f.write("  layer"+str(layer)+"_in.C = Tin_C_l0;\n")
             f.write("  layer"+str(layer)+"_in.H = Tin_H_l0;\n")
             f.write("  layer"+str(layer)+"_in.W = Tin_W_l0;\n")
+        elif layer == 0:                                # First layer
+            f.write("  // Layer "+str(layer)+"\n")
+            f.write("  layer"+str(layer)+"_in.data = l"+str(layer)+"_in;\n")
+            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        elif layer > 0 and layer < len(layers_l)-1:     # Hidden layers
+            f.write("  // Layer "+str(layer)+"\n")
+            f.write("  layer"+str(layer)+"_in.data = l"+str(layer - previous_was_skip_data)+"_in;\n")
+            if (layer - previous_was_skip) > last_updated_idx: #0: # Avoid assignement of l0_in_diff
+                f.write("  layer"+str(layer)+"_in.diff = l"+str(layer - previous_was_skip_diff)+"_in_diff;\n")
+            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        elif layer == len(layers_l)-1:                  # Last layer
+            f.write("  // Layer "+str(layer)+"\n")
+            f.write("  layer"+str(layer)+"_in.data = l"+str(layer - previous_was_skip_data)+"_in;\n")
+            f.write("  layer"+str(layer)+"_in.diff = l"+str(layer - previous_was_skip_diff)+"_in_diff;\n")
+            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
+            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        else:
+            print("[deployment_utils.GenerateNet]: Error in PULP layer initialization!")
+            exit()
+
+        # WEIGHT BLOB
+        if len(layers_l) == 1:                          # DNN is 1 layer long
             f.write("  layer"+str(layer)+"_wgt.data = l0_ker;\n")
-            f.write("  layer"+str(layer)+"_wgt.diff = l0_ker_diff;\n")
+            if update_layer_l[layer] == 1:    # Sparse Update
+                f.write("  layer"+str(layer)+"_wgt.diff = l0_ker_diff;\n")
             if layers_l[layer] == 'DW':
                 f.write("  layer"+str(layer)+"_wgt.dim = Tin_C_l0*Tker_H_l0*Tker_W_l0;\n")
             elif layers_l[layer] == 'InstNorm':
@@ -1198,23 +1261,11 @@ def GenerateNet(proj_folder_path, project_name,
             f.write("  layer"+str(layer)+"_wgt.C = Tin_C_l0;\n")
             f.write("  layer"+str(layer)+"_wgt.H = Tker_H_l0;\n")
             f.write("  layer"+str(layer)+"_wgt.W = Tker_W_l0;\n")
-            f.write("  layer"+str(layer)+"_out.data = l0_out;\n")
-            f.write("  layer"+str(layer)+"_out.diff = l0_out_diff;\n")
-            f.write("  layer"+str(layer)+"_out.dim = Tout_C_l0*Tout_H_l0*Tout_W_l0;\n")
-            f.write("  layer"+str(layer)+"_out.C = Tout_C_l0;\n")
-            f.write("  layer"+str(layer)+"_out.H = Tout_H_l0;\n")
-            f.write("  layer"+str(layer)+"_out.W = Tout_W_l0;\n")
-        # First layer connection
-        elif layer == 0:
-            f.write("  // Layer "+str(layer)+"\n")
-            f.write("  layer"+str(layer)+"_in.data = l"+str(layer)+"_in;\n")
-            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        elif layer == 0:                                # First layer
             if layers_l[0] != 'Skipnode': # Avoid weight assignment for Skip Connections
                 f.write("  layer"+str(layer)+"_wgt.data = l"+str(layer)+"_ker;\n")
-                f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
+                if update_layer_l[layer] == 1:    # Sparse Update
+                    f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
                 if layers_l[layer] == 'DW':
                     f.write("  layer"+str(layer)+"_wgt.dim = Tin_C_l"+str(layer)+"*Tker_H_l"+str(layer)+"*Tker_W_l"+str(layer)+";\n")
                 elif layers_l[layer] == 'InstNorm':
@@ -1224,32 +1275,12 @@ def GenerateNet(proj_folder_path, project_name,
                 f.write("  layer"+str(layer)+"_wgt.C = Tin_C_l"+str(layer)+";\n")
                 f.write("  layer"+str(layer)+"_wgt.H = Tker_H_l"+str(layer)+";\n")
                 f.write("  layer"+str(layer)+"_wgt.W = Tker_W_l"+str(layer)+";\n")
-                # Assign to cast_buffer in case data type changes
-                if data_type_l[layer] != data_type_l[layer+1]:
-                    f.write("  layer"+str(layer)+"_out.data = ("+C_data_type+"*) cast_buffer;\n")
-                    f.write("  layer"+str(layer)+"_out.diff = ("+C_data_type+"*) cast_buffer;\n")
-                else:
-                    f.write("  layer"+str(layer)+"_out.data = l"+str(layer+1)+"_in;\n")
-                    f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")     
-                # End of assignment       
-                f.write("  layer"+str(layer)+"_out.dim = Tout_C_l"+str(layer)+"*Tout_H_l"+str(layer)+"*Tout_W_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.C = Tout_C_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.H = Tout_H_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.W = Tout_W_l"+str(layer)+";\n")
-        # Hidden layers
-        elif layer > 0 and layer < len(layers_l)-1:
-            f.write("  // Layer "+str(layer)+"\n")
-            f.write("  layer"+str(layer)+"_in.data = l"+str(layer - previous_was_skip_data)+"_in;\n")
-            if (layer - previous_was_skip) > 0: # Avoid assignement of l0_in_diff
-                f.write("  layer"+str(layer)+"_in.diff = l"+str(layer - previous_was_skip_diff)+"_in_diff;\n")
-            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        elif layer > 0 and layer < len(layers_l)-1:     # Hidden layers
             if layers_l[layer] != 'Skipnode':   # Avoid weight assignment for Skipnodes and out data assignement
                 if layers_l[layer]  != 'Sumnode':    # Avoid ONLY weight assignment for Sumnodes
                     f.write("  layer"+str(layer)+"_wgt.data = l"+str(layer)+"_ker;\n")
-                    f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
+                    if update_layer_l[layer] == 1:    # Sparse Update
+                        f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
                     if layers_l[layer] == 'DW':
                         f.write("  layer"+str(layer)+"_wgt.dim = Tin_C_l"+str(layer)+"*Tker_H_l"+str(layer)+"*Tker_W_l"+str(layer)+";\n")
                     elif layers_l[layer] == 'InstNorm':
@@ -1259,35 +1290,11 @@ def GenerateNet(proj_folder_path, project_name,
                     f.write("  layer"+str(layer)+"_wgt.C = Tin_C_l"+str(layer)+";\n")
                     f.write("  layer"+str(layer)+"_wgt.H = Tker_H_l"+str(layer)+";\n")
                     f.write("  layer"+str(layer)+"_wgt.W = Tker_W_l"+str(layer)+";\n")
-                # Assign to cast_buffer in case data type changes
-                if data_type_l[layer] != data_type_l[layer+1]:
-                    f.write("  layer"+str(layer)+"_out.data = ("+C_data_type+"*) cast_buffer;\n")
-                    f.write("  layer"+str(layer)+"_out.diff = ("+C_data_type+"*) cast_buffer;\n")
-                else:
-                    f.write("  layer"+str(layer)+"_out.data = l"+str(layer+1)+"_in;\n")
-                    if sumnode_connections[layer] == -1:
-                        f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")
-                    elif layers_l[layer] == 'Sumnode':     
-                        f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")
-                    else:     
-                        f.write("  layer"+str(layer)+"_out.diff = l"+str(sumnode_connections[layer])+"_in_diff;\n")
-                # End of assignment     
-                f.write("  layer"+str(layer)+"_out.dim = Tout_C_l"+str(layer)+"*Tout_H_l"+str(layer)+"*Tout_W_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.C = Tout_C_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.H = Tout_H_l"+str(layer)+";\n")
-                f.write("  layer"+str(layer)+"_out.W = Tout_W_l"+str(layer)+";\n")
-        # Last layer
-        elif layer == len(layers_l)-1:
-            f.write("  // Layer "+str(layer)+"\n")
-            f.write("  layer"+str(layer)+"_in.data = l"+str(layer - previous_was_skip_data)+"_in;\n")
-            f.write("  layer"+str(layer)+"_in.diff = l"+str(layer - previous_was_skip_diff)+"_in_diff;\n")
-            f.write("  layer"+str(layer)+"_in.dim = Tin_C_l"+str(layer)+"*Tin_H_l"+str(layer)+"*Tin_W_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.C = Tin_C_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.H = Tin_H_l"+str(layer)+";\n")
-            f.write("  layer"+str(layer)+"_in.W = Tin_W_l"+str(layer)+";\n")
+        elif layer == len(layers_l)-1:                  # Last layer
             if layers_l[layer] !=  'Sumnode':
                 f.write("  layer"+str(layer)+"_wgt.data = l"+str(layer)+"_ker;\n")
-                f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
+                if update_layer_l[layer] == 1:
+                    f.write("  layer"+str(layer)+"_wgt.diff = l"+str(layer)+"_ker_diff;\n")
                 if layers_l[layer] == 'DW':
                     f.write("  layer"+str(layer)+"_wgt.dim = Tin_C_l"+str(layer)+"*Tker_H_l"+str(layer)+"*Tker_W_l"+str(layer)+";\n")
                 elif layers_l[layer] == 'InstNorm':
@@ -1297,8 +1304,62 @@ def GenerateNet(proj_folder_path, project_name,
                 f.write("  layer"+str(layer)+"_wgt.C = Tin_C_l"+str(layer)+";\n")
                 f.write("  layer"+str(layer)+"_wgt.H = Tker_H_l"+str(layer)+";\n")
                 f.write("  layer"+str(layer)+"_wgt.W = Tker_W_l"+str(layer)+";\n")
+        else:
+            print("[deployment_utils.GenerateNet]: Error in PULP layer initialization!")
+            exit()
+
+        # OUTPUT BLOB
+        if len(layers_l) == 1:                          # DNN is 1 layer long
+            f.write("  layer"+str(layer)+"_out.data = l0_out;\n")
+            if layer >= last_updated_idx:
+                f.write("  layer"+str(layer)+"_out.diff = l0_out_diff;\n")
+            f.write("  layer"+str(layer)+"_out.dim = Tout_C_l0*Tout_H_l0*Tout_W_l0;\n")
+            f.write("  layer"+str(layer)+"_out.C = Tout_C_l0;\n")
+            f.write("  layer"+str(layer)+"_out.H = Tout_H_l0;\n")
+            f.write("  layer"+str(layer)+"_out.W = Tout_W_l0;\n")
+        elif layer == 0:                                # First layer
+            if layers_l[0] != 'Skipnode': # Avoid weight assignment for Skip Connections
+                # Assign to cast_buffer in case data type changes
+                if data_type_l[layer] != data_type_l[layer+1]:
+                    f.write("  layer"+str(layer)+"_out.data = ("+C_data_type+"*) cast_buffer;\n")
+                    if layer >= last_updated_idx:
+                        f.write("  layer"+str(layer)+"_out.diff = ("+C_data_type+"*) cast_buffer;\n")
+                else:
+                    f.write("  layer"+str(layer)+"_out.data = l"+str(layer+1)+"_in;\n")
+                    if layer >= last_updated_idx:
+                        f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")     
+                # End of assignment       
+                f.write("  layer"+str(layer)+"_out.dim = Tout_C_l"+str(layer)+"*Tout_H_l"+str(layer)+"*Tout_W_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.C = Tout_C_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.H = Tout_H_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.W = Tout_W_l"+str(layer)+";\n")
+        elif layer > 0 and layer < len(layers_l)-1:     # Hidden layers
+            if layers_l[layer] != 'Skipnode':   # Avoid weight assignment for Skipnodes and out data assignement
+                # Assign to cast_buffer in case data type changes
+                if data_type_l[layer] != data_type_l[layer+1]:
+                    f.write("  layer"+str(layer)+"_out.data = ("+C_data_type+"*) cast_buffer;\n")
+                    if layer >= last_updated_idx:
+                        f.write("  layer"+str(layer)+"_out.diff = ("+C_data_type+"*) cast_buffer;\n")
+                else:
+                    f.write("  layer"+str(layer)+"_out.data = l"+str(layer+1)+"_in;\n")
+                    if sumnode_connections[layer] == -1:
+                        if layer >= last_updated_idx:
+                            f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")
+                    elif layers_l[layer] == 'Sumnode':
+                        if layer >= last_updated_idx:     
+                            f.write("  layer"+str(layer)+"_out.diff = l"+str(layer+1)+"_in_diff;\n")
+                    else:   
+                        if layer >= last_updated_idx:  
+                            f.write("  layer"+str(layer)+"_out.diff = l"+str(sumnode_connections[layer])+"_in_diff;\n")
+                # End of assignment     
+                f.write("  layer"+str(layer)+"_out.dim = Tout_C_l"+str(layer)+"*Tout_H_l"+str(layer)+"*Tout_W_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.C = Tout_C_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.H = Tout_H_l"+str(layer)+";\n")
+                f.write("  layer"+str(layer)+"_out.W = Tout_W_l"+str(layer)+";\n")                
+        elif layer == len(layers_l)-1:                  # Last layer
             f.write("  layer"+str(layer)+"_out.data = l"+str(layer)+"_out;\n")
-            f.write("  layer"+str(layer)+"_out.diff = l"+str(layer)+"_out_diff;\n")
+            if layer >= last_updated_idx:
+                f.write("  layer"+str(layer)+"_out.diff = l"+str(layer)+"_out_diff;\n")
             f.write("  layer"+str(layer)+"_out.dim = Tout_C_l"+str(layer)+"*Tout_H_l"+str(layer)+"*Tout_W_l"+str(layer)+";\n")
             f.write("  layer"+str(layer)+"_out.C = Tout_C_l"+str(layer)+";\n")
             f.write("  layer"+str(layer)+"_out.H = Tout_H_l"+str(layer)+";\n")
@@ -1308,14 +1369,16 @@ def GenerateNet(proj_folder_path, project_name,
             exit()
 
         if sumnode_connections[layer] != -1 and layers_l[layer] != 'Sumnode':
-            previous_was_skip_data += 1
             if layers_l[layer] == 'Skipnode':
+                previous_was_skip_data += 1
                 previous_was_skip_diff += 1
             else: 
                 previous_was_skip_diff = 0
         else:
             previous_was_skip_data = 0
             previous_was_skip_diff = 0
+
+
 
     f.write("\n  // Configure layer structures\n")
     first_is_skip = False # Avoid calculation of gradient if the first Layer is a skipnode
@@ -1330,15 +1393,22 @@ def GenerateNet(proj_folder_path, project_name,
             skip_inputgrad = 1
         else: 
             skip_inputgrad = 0
+        # Check if to perform in grad
+        if layer > 0:
+            if update_layer_l[layer-1] == 0:
+                skip_inputgrad = 1
         # Write configuration templates
         if layers_l[layer] == 'linear':
-            f.write(ntemp.linear_config_template(layer, skip_inputgrad, data_type_l[layer]))
+            f.write(ntemp.linear_config_template(layer, skip_inputgrad, data_type_l[layer], update_layer_l[layer]))
         elif layers_l[layer] == 'conv2d':
-            f.write(ntemp.conv2d_config_template(layer, h_pad_l[layer], w_pad_l[layer], h_str_l[layer], w_str_l[layer], skip_inputgrad, data_type_l[layer]))
+            IM2COL_USEIT = 1
+            if CONV2D_USE_IM2COL == False:
+                IM2COL_USEIT = 0
+            f.write(ntemp.conv2d_config_template(layer, h_pad_l[layer], w_pad_l[layer], h_str_l[layer], w_str_l[layer], skip_inputgrad, data_type_l[layer], IM2COL_USEIT, update_layer_l[layer]))
         elif layers_l[layer] == 'PW':
-            f.write(ntemp.PW_config_template(layer, skip_inputgrad, data_type_l[layer]))
+            f.write(ntemp.PW_config_template(layer, skip_inputgrad, data_type_l[layer], update_layer_l[layer]))
         elif layers_l[layer] == 'DW':
-            f.write(ntemp.DW_config_template(layer, h_pad_l[layer], w_pad_l[layer], h_str_l[layer], w_str_l[layer], skip_inputgrad, data_type_l[layer]))
+            f.write(ntemp.DW_config_template(layer, h_pad_l[layer], w_pad_l[layer], h_str_l[layer], w_str_l[layer], skip_inputgrad, data_type_l[layer], update_layer_l[layer]))
         elif layers_l[layer] == 'ReLU':
             f.write(ntemp.ReLU_config_template(layer, data_type_l[layer]))
         elif layers_l[layer] == 'MaxPool':
@@ -1351,7 +1421,7 @@ def GenerateNet(proj_folder_path, project_name,
         elif layers_l[layer] == 'Skipnode':
             pass
         elif layers_l[layer] == 'InstNorm':
-            f.write(ntemp.InstNorm_config_template(layer, skip_inputgrad))
+            f.write(ntemp.InstNorm_config_template(layer, skip_inputgrad, update_layer_l[layer]))
         else:
             print("[deployment_utils.GenerateNet] Undefined layer "+str(layer)+" (unable to write configuration structure)!!")
         if sumnode_connections[layer] != -1 and layers_l[layer] != 'Sumnode':
@@ -1474,20 +1544,25 @@ def GenerateNet(proj_folder_path, project_name,
             f.write("  START_STATS();\n")
             f.write("  #endif\n")    
 
+        # Determine if backprop is needed
+        stop_backprop = False
+        if lay <= last_updated_idx:
+            stop_backprop = True
+
         # Generate backward layer template
         skip_in_grad = 0
         FIRST_LAYER = False
-        if lay == 0:
+        if lay == 0 or stop_backprop:
             skip_in_grad = 1
             FIRST_LAYER = True
         if layers_l[lay] == 'linear':
-            f.write(ntemp.linear_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER))
+            f.write(ntemp.linear_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER, update_layer_l[lay]))
         elif layers_l[lay] == 'conv2d':
-            f.write(ntemp.conv2d_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER))
+            f.write(ntemp.conv2d_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER, update_layer_l[lay]))
         elif layers_l[lay] == 'DW':
-            f.write(ntemp.DW_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER))
+            f.write(ntemp.DW_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER, update_layer_l[lay]))
         elif layers_l[lay] == 'PW':
-            f.write(ntemp.PW_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER))
+            f.write(ntemp.PW_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER, update_layer_l[lay]))
         elif layers_l[lay] == 'ReLU':
             f.write(ntemp.ReLU_template_BW(lay, data_type_l[lay]))
         elif layers_l[lay] == 'AvgPool':
@@ -1500,7 +1575,7 @@ def GenerateNet(proj_folder_path, project_name,
             f.write(ntemp.residualconn_template_copy_BW(lay, data_type_l[lay]))
             prev_sumnode = lay
         elif layers_l[lay]  == 'InstNorm':
-            f.write(ntemp.InstNorm_template_BW(lay, data_type_l[lay]))
+            f.write(ntemp.InstNorm_template_BW(lay, data_type_l[lay], SEPARATE_BACKWARD_STEPS, FIRST_LAYER, update_layer_l[layer]))
         else:
             print("[deployment_utils.GenerateNet BW]: PULP layer not implemented or wrapped in DNN Deployer!")
             exit()
@@ -1559,7 +1634,7 @@ def GenerateNet(proj_folder_path, project_name,
     f.write("void update_weights()\n{\n")
 
     for layer in range(len(layers_l)):
-        if layers_l[layer] in ['linear', 'conv2d', 'DW', 'PW', 'InstNorm']:
+        if layers_l[layer] in ['linear', 'conv2d', 'DW', 'PW', 'InstNorm'] and update_layer_l[layer] == 1:
             if data_type_l[layer] == 'FP32':
                 f.write("  struct optim_args opt_l"+str(layer)+";\n")
             elif data_type_l[layer] == 'FP16':
@@ -1645,6 +1720,11 @@ def GenerateNet(proj_folder_path, project_name,
     if data_type_l[output_index] == 'FP16':
         f.write("    pulp_1dsoftmax_fp16_fw(&layer0_out);\n")
     f.write("    compute_loss();\n")
+    if PRINT_TRAIN_LOSS == True:
+        f.write("    /* Stop profiling */ pi_perf_stop();\n")
+        f.write("    if (epoch == 0) printf(\"\\n\");\n")
+        f.write("    printf(\">>> EPOCH %d: train_loss = %f (GM: %f)\\n\", epoch, loss, TRAIN_LOSS[epoch]);\n")
+        f.write("    /* Continue profiling */ pi_perf_start();\n")
     f.write("    backward();\n")
     f.write("    update_weights();\n")
     f.write("  }\n\n")
@@ -1672,4 +1752,3 @@ def GenerateNet(proj_folder_path, project_name,
     f.close()
 
     return
-

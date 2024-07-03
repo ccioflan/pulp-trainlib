@@ -7,21 +7,21 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/scratch/wetterhorn/cioflanc/minicon
 export PROJECTPATH=$1
 export PROJECTNAME=$2
 export MODELPATH=$3
+export START=$4
 
 
 
 rm -rf /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME # TODO: parametrize
-mkdir -p /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
-cp resources/* /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
+
 cd tools/TrainLib_Deployer
 if [ -z "$MODELPATH" ]
 then
 	python TrainLib_Deployer.py --project_path /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH --project_name $PROJECTNAME
 else
-	python TrainLib_Deployer.py --project_path /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH --project_name $PROJECTNAME --model_path $MODELPATH
+	python TrainLib_Deployer.py --project_path /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH --project_name $PROJECTNAME --model_path $MODELPATH --start_at $START
 fi
+cp ../../resources/* /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
 cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME/utils/
 python GM.py
 cp init-defines.h ../
-cp io_data.c ../
 cp io_data.h ../
