@@ -23,6 +23,34 @@
 #include "math.h"
 
 
+void pulp_1dsoftmax_fp32_fw(void * input_args)
+{
+
+  struct blob * args = (struct blob *) input_args;
+
+  int dim = args->dim;
+  float* inData = args->data;
+  float* outData = args->data;
+
+  float max = inData[0];
+  for (size_t i = 0; i < dim; ++i) {
+    if (inData[i] > max) {
+      max = inData[i];
+    }
+  }
+
+  float sum = 0.f;
+  for (size_t i = 0; i < dim; ++i) {
+    float out = fastexp_gist(inData[i] - max);
+    outData[i] = out;
+    sum += out;
+  }
+
+  for (size_t i = 0; i < dim; ++i) {
+    outData[i] /= sum;
+  }
+}
+
 void pulp_sigmoid_fp32_fw_cl( void * act_args )
 {
   struct act_args * args = (struct act_args *) act_args;

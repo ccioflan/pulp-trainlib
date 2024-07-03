@@ -54,6 +54,11 @@ struct softmax_args_fp16{
  * Activation functions, both FW and BW
  **/
 
+/**
+ * @brief Forward pass function for post-classifier softmax
+ * @param input_args Input for softmax with in-place computation.
+*/
+void pulp_1dsoftmax_fp16_fw( void * input_args);
 
 /**
  * @brief Forward pass function. Configure and pass a act_args_fp16 structure pointer as argument.

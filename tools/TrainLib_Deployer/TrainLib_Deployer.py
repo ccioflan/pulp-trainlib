@@ -213,7 +213,7 @@ if READ_MODEL_ARCH :
                 opt_mm_wg_list.append(0)
                 opt_mm_ig_list.append(0)
                 # TODO: Read from file
-                data_type_list.append('FP32')
+                data_type_list.append('FP16')
                 # TODO: Read from file
                 # Note that this also determines the read position for in_ch_list and out_ch_list
                 data_layout_list.append('CHW')
