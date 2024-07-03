@@ -12,6 +12,7 @@ export MODELPATH=$3
 
 rm -rf /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME # TODO: parametrize
 mkdir -p /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
+cp resources/* /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
 cd tools/TrainLib_Deployer
 if [ -z "$MODELPATH" ]
 then
