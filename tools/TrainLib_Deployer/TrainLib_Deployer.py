@@ -74,6 +74,7 @@ project_name    = args.project_name
 project_path    = args.project_path
 proj_folder     = project_path + project_name + '/'
 
+
 # TRAINING PROPERTIES
 epochs          = 5
 batch_size      = 1                   # BATCHING NOT IMPLEMENTED!!
@@ -111,10 +112,11 @@ data_type_list     = ['FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'F
 data_list           = []
 # Data layout list (CHW or HWC) 
 data_layout_list    = ['CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW']   # TO DO
+# Bias
+bias_list           = [ 1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1 ]
 # Sparse Update
 update_layer_list   = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]             # Set to 1 for each layer you want to update, 0 if you want to skip weight update
 # ----- END OF NETWORK GRAPH -----
-
 
 
 
