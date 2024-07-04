@@ -76,7 +76,7 @@ proj_folder     = project_path + project_name + '/'
 
 
 # TRAINING PROPERTIES
-epochs          = 5
+epochs          = 10
 batch_size      = 1                   # BATCHING NOT IMPLEMENTED!!
 learning_rate   = 0.001
 optimizer       = "SGD"                # Name of PyTorch's optimizer
@@ -107,13 +107,13 @@ opt_mm_wg_list      = [ 10, 0, 0, 12, 0, 0, 12, 0, 0, 12, 0, 10 ]
 opt_mm_ig_list      = [ 10, 0, 0, 12, 0, 0, 12, 0, 0, 12, 0, 10 ]
 # Data type list for layer-by-layer deployment (mixed precision)
 #data_type_list      = ['FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16', 'FP16']
-data_type_list     = ['FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32']
+data_type_list      = ['FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32', 'FP32']
 # Placeholder for pretrained parameters
-data_list           = []
+weight_list         = []
 # Data layout list (CHW or HWC) 
 data_layout_list    = ['CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW', 'CHW']   # TO DO
 # Bias
-bias_list           = [ 1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1 ]
+bias_list           = [ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0]
 # Sparse Update
 update_layer_list   = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]             # Set to 1 for each layer you want to update, 0 if you want to skip weight update
 # ----- END OF NETWORK GRAPH -----
@@ -310,7 +310,7 @@ if READ_MODEL_ARCH :
                     raise NotImplementedError("Biases are not implemented in trainlib")
                 except (KeyError, IndexError):
                     bias_init = []
-                data_list.append((weight_init, bias_init))
+                weight_list.append((weight_init, bias_init))
                 sumnode_connections.append(0)
             elif onnx_node.op_type == 'AveragePool':
                 in_ch_list.append(graph.get_channel_count(onnx_node.input[0]))
@@ -333,7 +333,7 @@ if READ_MODEL_ARCH :
                 opt_mm_ig_list.append(0)
                 data_type_list.append(graph.get_precision())
                 data_layout_list.append('CHW')
-                data_list.append(([], [])) # kernels
+                weight_list.append(([], [])) # kernels
                 sumnode_connections.append(0)
             elif onnx_node.op_type == 'GlobalAveragePool':
                 hk, wk = graph.get_hw(onnx_node.input[0])
@@ -357,7 +357,7 @@ if READ_MODEL_ARCH :
                 opt_mm_ig_list.append(0)
                 data_type_list.append(graph.get_precision())
                 data_layout_list.append('CHW')
-                data_list.append(([], [])) # kernels
+                weight_list.append(([], [])) # kernels
                 sumnode_connections.append(0)
             elif onnx_node.op_type == 'Conv':
                 in_ch_list.append(graph.get_channel_count(onnx_node.input[0]))
@@ -396,7 +396,7 @@ if READ_MODEL_ARCH :
                     # Ignore missing bias
                     bias_init = []
                     pass
-                data_list.append((weight_init, bias_init)) # kernels
+                weight_list.append((weight_init, bias_init)) # kernels
                 sumnode_connections.append(0)
             elif onnx_node.op_type == 'Clip':
                 # This does not handle ReLU6, as it is not supported by trainlib
@@ -416,7 +416,7 @@ if READ_MODEL_ARCH :
                 opt_mm_ig_list.append(0)
                 data_layout_list.append('CHW')
                 data_type_list.append(graph.get_precision())
-                data_list.append(([], []))
+                weight_list.append(([], []))
                 sumnode_connections.append(0)
     else:
         raise NotImplementedError("Model format not supported.")
@@ -424,9 +424,9 @@ if READ_MODEL_ARCH :
     data_dir = proj_folder+'data/'
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
-    for i, (weight_init, bias_init) in enumerate(data_list):
-        np.save(data_dir+f"l{i}w.npy", np.array(data_list[i][0], dtype=("float32" if data_type_list[i] == "FP32" else "float16")))
-        np.save(data_dir+f"l{i}b.npy", np.array(data_list[i][1], dtype=("float32" if data_type_list[i] == "FP32" else "float16")))
+    for i, (weight_init, bias_init) in enumerate(weight_list):
+        np.save(data_dir+f"l{i}w.npy", np.array(weight_list[i][0], dtype=("float32" if data_type_list[i] == "FP32" else "float16")))
+        np.save(data_dir+f"l{i}b.npy", np.array(weight_list[i][1], dtype=("float32" if data_type_list[i] == "FP32" else "float16")))
 
     print("Generating project at location "+proj_folder)
 
@@ -438,7 +438,8 @@ if READ_MODEL_ARCH :
     # Check if the network training fits L1
     memocc = composer.DNN_Size_Checker(layer_list, in_ch_list, out_ch_list, hk_list, wk_list, hin_list, win_list, 
                                 h_str_list, w_str_list, h_pad_list, w_pad_list,
-                                data_type_list, update_layer_list, L1_SIZE_BYTES, USE_DMA, CONV2D_USE_IM2COL)
+                                data_type_list, bias_list, update_layer_list, 
+                                L1_SIZE_BYTES, USE_DMA, CONV2D_USE_IM2COL)
 
     print("DNN memory occupation: {} bytes of {} available L1 bytes ({}%).".format(memocc, L1_SIZE_BYTES, (memocc/L1_SIZE_BYTES)*100))
 
@@ -447,7 +448,7 @@ if READ_MODEL_ARCH :
                             layer_list, in_ch_list, out_ch_list, hk_list, wk_list, 
                             hin_list, win_list, h_str_list, w_str_list, h_pad_list, w_pad_list,
                             epochs, batch_size, learning_rate, optimizer, loss_fn,
-                            NUM_CORES, data_type_list, data_list, update_layer_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list, sumnode_connections,
+                            NUM_CORES, data_type_list, weight_list, bias_list, update_layer_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list, sumnode_connections,
                             USE_DMA, PROFILE_SINGLE_LAYERS, SEPARATE_BACKWARD_STEPS, CONV2D_USE_IM2COL, PRINT_TRAIN_LOSS)
 
     print("PULP project generation successful!")
@@ -466,7 +467,7 @@ else:
     # Check if the network training fits L1
     memocc = composer.DNN_Size_Checker(layer_list, in_ch_list, out_ch_list, hk_list, wk_list, hin_list, win_list, 
                                 h_str_list, w_str_list, h_pad_list, w_pad_list,
-                                data_type_list, update_layer_list, 
+                                data_type_list, bias_list, update_layer_list,
                                 L1_SIZE_BYTES, USE_DMA, CONV2D_USE_IM2COL)
 
     print("DNN memory occupation: {} bytes of {} available L1 bytes ({}%).".format(memocc, L1_SIZE_BYTES, (memocc/L1_SIZE_BYTES)*100))
@@ -476,7 +477,7 @@ else:
                             layer_list, in_ch_list, out_ch_list, hk_list, wk_list, 
                             hin_list, win_list, h_str_list, w_str_list, h_pad_list, w_pad_list,
                             epochs, batch_size, learning_rate, optimizer, loss_fn,
-                            NUM_CORES, data_type_list, data_list, update_layer_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list, 
+                            NUM_CORES, data_type_list, weight_list, bias_list, update_layer_list, opt_mm_fw_list, opt_mm_wg_list, opt_mm_ig_list,
                             sumnode_connections, USE_DMA, PROFILE_SINGLE_LAYERS, SEPARATE_BACKWARD_STEPS, CONV2D_USE_IM2COL, PRINT_TRAIN_LOSS)
 
     print("PULP project generation successful!")

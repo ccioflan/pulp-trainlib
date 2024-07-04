@@ -134,7 +134,7 @@ void cast_fp16_tensor_to_fp32 (void * cast_16t32_args)
   int stop = start+blockSize > args.size ? args.size : start+blockSize;
 
   for (int i=start; i<stop; i++) {
-    // args.destination[i] = (float) args.source[i];
+    args.destination[i] = (float) args.source[i];
   }
 }
 
@@ -305,12 +305,15 @@ void pulp_max_fp32_cl(void * void_args){
     struct max_args* args = (struct max_args *) void_args;
 
     float* input = args->input;
-    float max = args->maxes[pi_core_id()];
+    //float max = args->maxes[pi_core_id()];
+    float max;
     int dim = args->dim;
 
     const int blockSize=(args->dim+NUM_CORES-1)/NUM_CORES;
     const int start = pi_core_id()*blockSize;
     const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    max = input[start];
 
     for(int i=start; i<stop; i++)
         if(max < input[i])
@@ -427,20 +430,6 @@ void pulp_exp_sum_fp32_cl(void* void_args){
     float* sums = args->sums;
     int dim = args->dim;
     float* maxes = args->maxes;
-    
-
-    #ifdef DEBUG
-    if(pi_core_id()==0){
-        int L = dim;
-        printf("\nCurrent input - max in softmax: %d %d\n", L, L);
-        for (int j=0; j<L*L; j++){
-            if(!(j%((int)L))) printf("\n");
-            printf("%.8f ", (input[j] - maxes[j]));
-        }
-    }
-    printf("\n");
-    #endif
-
 
     const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
     const int start = pi_core_id()*blockSize;
@@ -957,6 +946,96 @@ void pulp_mean_std_fp32_cl(void * mean_std_args)
         *mean = m;
         *var = v;
         *std = sqrtf(v);
+}
+
+
+void vector_exp_sum_fp32_cl(void * vector_exp_sum_args){
+    struct vector_exp_sum_args* args = (struct vector_exp_sum_args*) vector_exp_sum_args;
+
+    float* input = args->input;
+    float* output = args->output;
+    float* sums = args->sums;
+    int dim = args->dim;
+    float max = args->max;
+
+    int id = pi_core_id();
+
+    const int blockSize=(dim+NUM_CORES-1)/NUM_CORES;
+    const int start = id*blockSize;
+    const int stop = start + blockSize > dim ? dim : start+blockSize;
+
+    sums[id] = 0;
+
+    for(int i=start; i<stop; i++){        
+        #ifdef FASTEXPF
+        float o = fastexp_gist(input[i] - max);
+        #else
+        float o = expf(input[i] - max);
+        #endif
+        output[i] = o;
+        sums[id] += o;   
+    }
+}
+
+#define CORDIC_N_ITERATION 12
+#define CORDIC_SCALING_FACTOR_14 0.6072529365170104
+#define CORDIC_SCALING_FACTOR_12 0.607252959138945
+#define CORDIC_SCALING_FACTOR_10 0.6072533210898753
+#define CORDIC_SCALING_FACTOR_8 0.6072591122988928
+
+const float atan_pow_2[14] = {
+        0.7853981633974483f, 
+    0.4636476090008061f, 
+    0.24497866312686414f, 
+    0.12435499454676144f, 
+    0.06241880999595735f, 
+    0.031239833430268277f, 
+    0.015623728620476831f, 
+    0.007812341060101111f, 
+    0.0039062301319669718f, 
+    0.0019531225164788188f, 
+    0.0009765621895593195f, 
+    0.0004882812111948983f, 
+    0.00024414062014936177f, 
+    0.00012207031189367021f };
+
+void cordic_cos_sin_fp32(float angle, float* cos, float* sin){
+    int inv_tan_theta = 1;
+    float x = CORDIC_SCALING_FACTOR_12;
+    float y = 0;
+    float x_n;
+    int cos_sign = 1;
+
+    angle -= ((int)(angle/(2*M_PI)))*(2*M_PI);
+
+    if(angle > M_PI)
+        angle -= 2*M_PI;
+    else if(angle < -M_PI)
+        angle += 2*M_PI;
+
+    if(angle > M_PI_2){
+        angle = M_PI - angle;
+        cos_sign = -1;
+    } else if(angle < -M_PI_2){
+        angle = -M_PI - angle;
+        cos_sign = -1;
+    }
+
+    for(int i=0; i<CORDIC_N_ITERATION; i++){
+        x_n = x;
+        if(angle > 0){
+            x -= y / inv_tan_theta;
+            y += x_n / inv_tan_theta;
+            angle -= atan_pow_2[i];
+        } else{
+            x += y / inv_tan_theta;
+            y -= x_n / inv_tan_theta;
+            angle += atan_pow_2[i];
+        }
+        inv_tan_theta <<= 1;
+    }
+    *cos = cos_sign*x;
+    *sin = y;
 }
 
 
