@@ -663,8 +663,9 @@ def GenerateGM(proj_folder_path, project_name,
     f.write("# Train the DNN\n")
     f.write("for batch in range(epochs):\n")
     f.write("\toptimizer.zero_grad()\n")
-    f.write("\tout = torch.nn.functional.softmax(net(inp))\n")
-    f.write("\tloss = loss_fn(out, label)\n")
+    f.write("\tout = torch.nn.functional.softmax(net(inp), dim=0)\n")
+    # f.write("\tloss = loss_fn(out, label)\n") # analyse FC distribution
+    f.write("\tloss = loss_fn(out.reshape(1, out.shape[0]), torch.Tensor([0]).to(device).long())\n") # analyse softmax distribution
     f.write("\ttrain_loss_list.append(loss)\n")
     f.write("\tloss.backward()\n")
     f.write("\toptimizer.step()\n")
@@ -672,7 +673,7 @@ def GenerateGM(proj_folder_path, project_name,
 
     # Inference after training
     f.write("\n# Inference once after training\n")
-    f.write("out = torch.nn.functional.softmax(net(inp))\n")
+    f.write("out = torch.nn.functional.softmax(net(inp), dim=0)\n")
     f.write("\n")
 
     # Dump input and output of the network to the header file for the MCU
