@@ -76,7 +76,7 @@ proj_folder     = project_path + project_name + '/'
 
 
 # TRAINING PROPERTIES
-epochs          = 10
+epochs          = 1
 batch_size      = 1                   # BATCHING NOT IMPLEMENTED!!
 learning_rate   = 0.001
 optimizer       = "SGD"                # Name of PyTorch's optimizer
