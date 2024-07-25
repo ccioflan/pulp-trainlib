@@ -9,19 +9,21 @@ export PROJECTNAME=$2
 export MODELPATH=$3
 export START=$4
 
+export CUR_DIR=$PWD
+export BASE_DIR=$CUR_DIR/../
 
 
-rm -rf /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME # TODO: parametrize
+rm -rf $BASE_DIR/$PROJECTPATH/$PROJECTNAME # TODO: parametrize
 
 cd tools/TrainLib_Deployer
 if [ -z "$MODELPATH" ]
 then
-	python TrainLib_Deployer.py --project_path /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH --project_name $PROJECTNAME
+	python TrainLib_Deployer.py --project_path $BASE_DIR/$PROJECTPATH --project_name $PROJECTNAME
 else
-	python TrainLib_Deployer.py --project_path /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH --project_name $PROJECTNAME --model_path $MODELPATH --start_at $START
+	python TrainLib_Deployer.py --project_path $BASE_DIR/$PROJECTPATH --project_name $PROJECTNAME --model_path $BASE_DIR/$MODELPATH --start_at $START
 fi
-cp ../../resources/* /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME
-cd /usr/scratch/wetterhorn/cioflanc/kws_on_gap9/tiny_denoiser/$PROJECTPATH/$PROJECTNAME/utils/
+cp ../../resources/* $BASE_DIR/$PROJECTPATH/$PROJECTNAME
+cd $BASE_DIR/$PROJECTPATH/$PROJECTNAME/utils/
 python GM.py
 cp init-defines.h ../
 cp io_data.h ../
