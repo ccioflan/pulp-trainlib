@@ -78,7 +78,7 @@ proj_folder     = project_path + project_name + '/'
 # TRAINING PROPERTIES
 epochs          = 1
 batch_size      = 1                   # BATCHING NOT IMPLEMENTED!!
-learning_rate   = 0.001
+learning_rate   = 0.00001
 optimizer       = "SGD"                # Name of PyTorch's optimizer
 loss_fn         = "CrossEntropyLoss"            # Name of PyTorch's loss function
 
@@ -230,6 +230,10 @@ class ONNXGraphParser:
         return pad[0], pad[1]
 
     def get_precision(self):
+
+        # CIOFLANC: Hardcoded for measurements.
+        # return "FP16"
+
         elem_type = self.graph.value_info[0].type.tensor_type.elem_type
         if elem_type == onnx.TensorProto.FLOAT:
             return "FP32"
