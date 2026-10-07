@@ -41,7 +41,16 @@ void pulp_1dsoftmax_fp16_fw(void * input_args)
 
   fp16 sum = 0.f;
   for (size_t i = 0; i < dim; ++i) {
-    fp16 out = (fp16) fastexp_gist((float) (inData[i] - max));
+
+    float diff = (float) inData[i] - max;
+    float x = GIST_A * diff + GIST_B;
+    if (x < GIST_C || x > GIST_D)
+        x = (x < GIST_C) ? 0.0f : GIST_D;
+
+    fp16 out = (fp16) x;
+    // fp16 out = (fp16) fastexp_gist((float) (inData[i] - max));
+    // fp16 out = expf (diff);
+
     outData[i] = out;
     sum += out;
   }
@@ -50,6 +59,7 @@ void pulp_1dsoftmax_fp16_fw(void * input_args)
     outData[i] /= sum;
   }
 }
+
 
 void pulp_sigmoid_fp16_fw_cl( void * act_args )
 {

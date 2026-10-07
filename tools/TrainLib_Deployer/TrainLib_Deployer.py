@@ -123,7 +123,7 @@ update_layer_list   = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]             # Set
 # EXECUTION PROPERTIES
 NUM_CORES       = 8
 L1_SIZE_BYTES   = 128*(2**10)
-USE_DMA = 'NO'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
+USE_DMA = 'SB'                          # choose whether to load all structures in L1 ('NO') or in L2 and use Single Buffer mode ('SB') or Double Buffer mode ('DB') 
 # BACKWARD SETTINGS
 SEPARATE_BACKWARD_STEPS = True          # If True, writes separate weight and input gradient in backward step
 # PROFILING OPTIONS
@@ -271,21 +271,27 @@ if READ_MODEL_ARCH :
         found_start = args.start_at is None
 
         if args.start_at is not None:
-            node_names = [n.op_type for n in graph.graph.node if n.op_type != 'Constant']
+            # node_names = [n.op_type for n in graph.graph.node if n.op_type != 'Constant'] # ORIGINAL
+            node_names = [n.name for n in graph.graph.node if n.op_type != 'Constant'] # WIP
             assert args.start_at in node_names, f"{args.start_at} is not a valid layer name. Layer names are: {node_names}"
             # CIOFLANC: temporary reconciling pseudo-sparse update implementations 
             update_layer_list = [1] * (len(node_names) -  node_names.index(args.start_at))
             # update_layer_list[node_names.index(args.start_at)] = 1
 
+
+        layer_idx = -1
         for onnx_node in graph.graph.node:
 
-            if not found_start:
-                if onnx_node.op_type != args.start_at:
-                    continue
-                else:
-                    found_start = True
+            layer_idx = layer_idx + 1
 
-            if (onnx_node.op_type == 'Gemm') or (onnx_node.op_type == 'MatMul'):
+            if not found_start:
+                # if onnx_node.op_type != args.start_at: # ORIGINAL
+                if args.start_at in onnx_node.name:
+                    found_start = True
+                else:
+                    continue
+
+            if (onnx_node.op_type == 'Gemm' ) or (onnx_node.op_type == 'MatMul'):
                 in_ch_list.append(graph.get_channel_count(onnx_node.input[0]))
                 out_ch_list.append(graph.get_channel_count(onnx_node.output[0]))
                 layer_list.append('linear')
@@ -314,22 +320,23 @@ if READ_MODEL_ARCH :
                     raise NotImplementedError("Biases are not implemented in trainlib")
                 except (KeyError, IndexError):
                     bias_init = []
+                    pass
                 weight_list.append((weight_init, bias_init))
                 sumnode_connections.append(0)
             elif onnx_node.op_type == 'AveragePool':
                 in_ch_list.append(graph.get_channel_count(onnx_node.input[0]))
                 out_ch_list.append(graph.get_channel_count(onnx_node.output[0]))
                 layer_list.append('AvgPool')
-                (hk, wk) = graph.get_kernel_size(onnx_node.op_type)
+                (hk, wk) = graph.get_kernel_size(onnx_node.op_type + '_' + str(layer_idx))
                 hk_list.append(hk)
                 wk_list.append(wk)
                 (hin, win) = graph.get_activation_size(onnx_node.input[0])
                 hin_list.append(hin)
                 win_list.append(win)
-                (hstr, wstr) = graph.get_stride(onnx_node.op_type)
+                (hstr, wstr) = graph.get_stride(onnx_node.op_type + '_' + str(layer_idx))
                 h_str_list.append(hstr)
                 w_str_list.append(wstr)
-                (hpad, wpad) = graph.get_pad(onnx_node.op_type)
+                (hpad, wpad) = graph.get_pad(onnx_node.op_type + '_' + str(layer_idx))
                 h_pad_list.append(hpad)
                 w_pad_list.append(wpad)
                 opt_mm_fw_list.append(0)
@@ -366,23 +373,23 @@ if READ_MODEL_ARCH :
             elif onnx_node.op_type == 'Conv':
                 in_ch_list.append(graph.get_channel_count(onnx_node.input[0]))
                 out_ch_list.append(graph.get_channel_count(onnx_node.output[0]))
-                if graph.is_pointwise(onnx_node.op_type):
+                if graph.is_pointwise(onnx_node.op_type + '_' + str(layer_idx)):
                     ty = "PW"
-                elif graph.is_depthwise(onnx_node.op_type):
+                elif graph.is_depthwise(onnx_node.op_type + '_' + str(layer_idx)):
                     ty = "DW"
                 else:
                     ty = "conv2d"
                 layer_list.append(ty)
-                (hk, wk) = graph.get_kernel_size(onnx_node.op_type)
+                (hk, wk) = graph.get_kernel_size(onnx_node.op_type + '_' + str(layer_idx))
                 hk_list.append(hk)
                 wk_list.append(wk)
                 (hin, win) = graph.get_activation_size(onnx_node.input[0])
                 hin_list.append(hin)
                 win_list.append(win)
-                (hstr, wstr) = graph.get_stride(onnx_node.op_type)
+                (hstr, wstr) = graph.get_stride(onnx_node.op_type + '_' + str(layer_idx))
                 h_str_list.append(hstr)
                 w_str_list.append(wstr)
-                (hpad, wpad) = graph.get_pad(onnx_node.op_type)
+                (hpad, wpad) = graph.get_pad(onnx_node.op_type + '_' + str(layer_idx))
                 h_pad_list.append(hpad)
                 w_pad_list.append(wpad)
                 opt_mm_fw_list.append(0)
@@ -395,7 +402,7 @@ if READ_MODEL_ARCH :
                 weight_init = graph.get_init(onnx_node.input[1])
                 try:
                     bias_init = graph.get_init(onnx_node.input[2])
-                    raise NotImplementedError("Biases are not implemented in trainlib")
+                    # raise NotImplementedError("Biases are not implemented in trainlib") # BYPASSED FOR NOW
                 except (KeyError, IndexError):
                     # Ignore missing bias
                     bias_init = []
